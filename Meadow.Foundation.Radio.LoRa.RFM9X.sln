@@ -1,0 +1,44 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.34814.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Examples", "Examples", "{BA7BD36C-8068-4DF6-A552-C94B49CA2665}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Meadow.Foundation.Radio.LoRa.RFM9X", "Examples\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj", "{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meadow.Foundation.Radio.LoRa.RFM9X", "src\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj", "{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meadow.Foundation.Radio.LoRaWan", "src\Meadow.Foundation.Radio.LoRaWan\Meadow.Foundation.Radio.LoRaWan.csproj", "{A521E3C7-7262-4666-910D-C6F840847221}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A521E3C7-7262-4666-910D-C6F840847221}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A521E3C7-7262-4666-910D-C6F840847221}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A521E3C7-7262-4666-910D-C6F840847221}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A521E3C7-7262-4666-910D-C6F840847221}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF} = {BA7BD36C-8068-4DF6-A552-C94B49CA2665}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {ECD8F26D-A696-4BD8-A730-AD0D6324DC92}
+	EndGlobalSection
+EndGlobal
