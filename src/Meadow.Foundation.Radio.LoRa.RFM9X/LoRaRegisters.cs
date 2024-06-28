@@ -487,14 +487,28 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
     public class LoRaChannels
     {
+        private static Frequency KHz125 = new Frequency(125, Kilohertz);
+        private static Frequency KHz500 = new Frequency(500, Kilohertz);
         public readonly Frequency UplinkBaseFrequency;
         public readonly Frequency UplinkChannelWidth;
         public readonly int UplinkChannelCount;
         public readonly Frequency DownlinkBaseFrequency;
         public readonly Frequency DownlinkWidth;
         public readonly int DownlinkChannelCount;
+        public readonly int TransmitPower;
+        public readonly int MinDataRate;
+        public readonly int MaxDataRate;
 
-        private LoRaChannels(Frequency uplinkBaseFrequency, Frequency uplinkChannelWidth, int uplinkChannelCount, Frequency downlinkBaseFrequency, Frequency downlinkWidth, int downlinkChannelCount)
+        private LoRaChannels(Frequency uplinkBaseFrequency, 
+                             Frequency uplinkChannelWidth,
+                             Frequency uplinkSignalBandwidth,
+                             int uplinkChannelCount,
+                             Frequency downlinkBaseFrequency, 
+                             Frequency downlinkWidth,
+                             Frequency downlinkSignalBandwidth,
+                             int downlinkChannelCount,
+                             int minDataRate = 0,
+                             int maxDataRate = 3)
         {
             UplinkBaseFrequency = uplinkBaseFrequency;
             UplinkChannelWidth = uplinkChannelWidth;
@@ -503,63 +517,81 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             DownlinkBaseFrequency = downlinkBaseFrequency;
             DownlinkWidth = downlinkWidth;
             DownlinkChannelCount = downlinkChannelCount;
+            MinDataRate = minDataRate;
+            MaxDataRate = maxDataRate;
         }
 
         public static LoRaChannels Us915Fsb1 = new(new Frequency(902.3, Megahertz),
-                                                    new Frequency(200, Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb2 = new(new Frequency(903.9, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb3 = new(new Frequency(905.5, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb4 = new(new Frequency(907.1, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb5 = new(new Frequency(908.7, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb6 = new(new Frequency(910.3, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb7 = new(new Frequency(911.9, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
 
         public static LoRaChannels Us915Fsb8 = new(new Frequency(913.5, Megahertz),
-                                                    new Frequency(200,  Kilohertz),
-                                                    8,
-                                                    new Frequency(923.3, Megahertz),
-                                                    new Frequency(600, Kilohertz),
-                                                    8);
+                                                   new Frequency(200,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8,
+                                                   new Frequency(923.3, Megahertz),
+                                                   new Frequency(600,   Kilohertz),
+                                                   new Frequency(500,   Kilohertz),
+                                                   8);
     }
 
     internal class LoRaFrequencyManager(LoRaChannels channels)

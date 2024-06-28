@@ -6,7 +6,6 @@
 		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
 		<PackageReference Include="Meadow.Logging" Version="1.12.2" />
 		<PackageReference Include="Meadow.Contracts" Version="1.12.2" />
 	</ItemGroup>

@@ -11,7 +11,17 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             WriteRegister(register, [value]);
         }
 
+        private void WriteRegister(byte register, byte value)
+        {
+            WriteRegister(register, [value]);
+        }
+
         private void WriteRegister(Register register, byte[] bytes)
+        {
+            WriteRegister((byte)register, bytes);
+        }
+
+        private void WriteRegister(byte register, byte[] bytes)
         {
             _logger.Debug($"Writing to register {register} with {bytes.ToHexString()}");
 #if CUSTOM_SPI

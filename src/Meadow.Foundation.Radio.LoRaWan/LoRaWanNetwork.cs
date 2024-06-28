@@ -18,6 +18,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             {
                 var joinResponse = await SendJoinRequest()
                                        .ConfigureAwait(false);
+                Console.WriteLine($"Join response: {BitConverter.ToString(joinResponse.RawMessage).Replace("-", " ")}");
             }
             catch (TimeoutException tex)
             {
@@ -31,15 +32,15 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             var request = new JoinRequest(_appEui, devEui, appKey, (ushort)_random.Next(0, ushort.MaxValue));
             using var message = request.ToMessage();
-            while (true)
-            {
-                logger.Info($"Sending join message {BitConverter.ToString(message.Array[..message.Length]).Replace("-", " ")}");
-                await radio.Send(message.Array[..message.Length]).ConfigureAwait(false);
-                await Task.Delay(1000).ConfigureAwait(false);
-            }
-            //var res = await radio.SendAndReceive(message.Array[..message.Length], TimeSpan.FromMinutes(1));
-            //logger.Info($"{BitConverter.ToString(res.MessagePayload).Replace("-", " ")}");
-            //return new JoinResponse(res.MessagePayload);
+            //while (true)
+            //{
+            //    logger.Info($"Sending join message {BitConverter.ToString(message.Array[..message.Length]).Replace("-", " ")}");
+            //    await radio.Send(message.Array[..message.Length]).ConfigureAwait(false);
+            //    await Task.Delay(1000).ConfigureAwait(false);
+            //}
+            var res = await radio.SendAndReceive(message.Array[..message.Length], TimeSpan.FromMinutes(1));
+            logger.Info($"{BitConverter.ToString(res.MessagePayload).Replace("-", " ")}");
+            return new JoinResponse(res.MessagePayload);
         }
     }
 }

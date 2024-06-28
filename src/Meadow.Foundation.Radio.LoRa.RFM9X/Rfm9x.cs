@@ -7,6 +7,7 @@ using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Hardware;
 using Meadow.Logging;
 using Meadow.Units;
+
 using static Meadow.Foundation.Radio.LoRa.RFM9X.LoRaRegisters;
 
 namespace Meadow.Foundation.Radio.LoRa.RFM9X
@@ -106,7 +107,28 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             var val = ReadRegister(Register.Version);
             if (val != 0x12)
                 throw new InvalidOperationException($"Invalid version {val}");
+            // more powah!
             WriteRegister(Register.PaConfig, 0xFF);
+            WriteRegister(Register.PaRamp, (byte)((ReadRegister(Register.PaRamp) & 0xF0) | 0x80));
+
+            // 500kHz bandwidth
+            // 4/8 coding rate
+            // Implicit header mode
+            //WriteRegister(Register.ModemConfig1, 0b10011001);
+
+            // 4096 chirps/symbol
+            //WriteRegister(Register.ModemConfig2, 0b11000000);
+            //WriteRegister(Register.ModemConfig3, 0b00001100);
+            //if (_frequencyManager.UplinkBaseFrequency.Hertz < RfMidBandThreshold)
+            //{
+            //    WriteRegister(0x36, 0x02);
+            //    WriteRegister(0x3A, 0x7F);
+            //}
+            //else
+            //{
+            //    WriteRegister(0x36, 0x02);
+            //    WriteRegister(0x3A, 0x64);
+            //}
             SetMode(RegOpMode.OpMode.Sleep);
             _logger.Debug("Initialization complete");
         }
@@ -115,7 +137,6 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
         {
             var registerFrequency = Convert.ToInt64(((uint)frequency.Hertz) / (32000000.0 / 524288.0));
             var bytes = BitConverter.GetBytes(registerFrequency);
-            _logger.Debug($"Setting frequency to {(long)frequency.Hertz} {registerFrequency}");
             WriteRegister(Register.FrfMsb, bytes[2]);
             WriteRegister(Register.FrfMid, bytes[1]);
             WriteRegister(Register.FrfLsb, bytes[0]);
@@ -205,6 +226,8 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
                 // Set the downlink frequency
                 SetFrequency(_frequencyManager.DownlinkBaseFrequency);
+                // Make sure the bandwidth, error coding rate, and header mode are right
+                WriteRegister(Register.ModemConfig1, 0b10011001);
 
                 // Set the modem to receive
                 SetMode(RegOpMode.OpMode.ReceiveSingle);
@@ -248,13 +271,32 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
             try
             {
+                // Bandwidth
+                // 0000 -> 7.8 kHz
+                // 0001 -> 10.4 kHz
+                // 0010 -> 15.6 kHz
+                // 0011 -> 20.8kHz
+                // 0100 -> 31.25 kHz
+                // 0101 -> 41.7 kHz
+                // 0110 -> 62.5 kHz
+                // 0111 -> 125 kHz
+                // 1000 -> 250 kHz
+                // 1001 -> 500 kHz
+                // Error coding rate
+                // 001 -> 4/5
+                // 010 -> 4/6
+                // 011 -> 4/7
+                // 100 -> 4/8
+                //WriteRegister(Register.ModemConfig1,            0b01111000);
+                // Spread factor 8
+                //WriteRegister(Register.ModemConfig2,            0b11000100);
+                //WriteRegister(Register.ModemConfig3,            0b00001100);
+                WriteRegister(Register.SyncWord,                0x34);
                 WriteRegister(Register.FifoTransmitBaseAddress, 0x00);
-                WriteRegister(Register.FifoAddressPointer, 0x00);
-
-                WriteRegister(Register.Fifo, payload);
-                WriteRegister(Register.PayloadLength, (byte)payload.Length);
-
-                WriteRegister(Register.DioMapping1, (byte)DioMapping1.Dio0TxDone);
+                WriteRegister(Register.FifoAddressPointer,      0x00);
+                WriteRegister(Register.PayloadLength,           (byte)payload.Length);
+                WriteRegister(Register.Fifo,                    payload);
+                WriteRegister(Register.DioMapping1,             (byte)DioMapping1.Dio0TxDone);
 
                 // Now actually transmit
                 SetMode(RegOpMode.OpMode.Transmit);
@@ -302,7 +344,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             }
 
             // Put the interrupt pin into receive mode
-            WriteRegister(Register.DioMapping1, (byte)(DioMapping1.Dio0RxDone|DioMapping1.Dio1RxTimeout));
+            WriteRegister(Register.DioMapping1, (byte)(DioMapping1.Dio0RxDone | DioMapping1.Dio1RxTimeout));
 
             // Clear all the interrupts
             WriteRegister(Register.InterruptFlags, (byte)InterruptFlags.ClearAll);

@@ -1,33 +1,8 @@
 ﻿using System.Security.Cryptography;
 using System;
-using Org.BouncyCastle.Crypto.Macs;
-using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    public class AESCMACExample
-    {
-        public static byte[] ComputeAESCMAC(byte[] key, byte[] data)
-        {
-            // Create an instance of the AESCMAC
-            var cmac = new CMac(new Org.BouncyCastle.Crypto.Engines.AesEngine());
-
-            // Initialize the CMAC with the key
-            cmac.Init(new KeyParameter(key));
-
-            // Update the CMAC with the data
-            cmac.BlockUpdate(data, 0, data.Length);
-
-            // Create a buffer to hold the CMAC result
-            var result = new byte[cmac.GetMacSize()];
-
-            // Calculate the CMAC
-            cmac.DoFinal(result, 0);
-
-            return result;
-        }
-    }
-
     internal class AesCMac
     {
         private const int BlockSize = 16; // AES block size in bytes
