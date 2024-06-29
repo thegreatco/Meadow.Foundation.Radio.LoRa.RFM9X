@@ -17,7 +17,9 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                                                 Device.CreateSpiBus(new Frequency(10, Frequency.UnitType.Megahertz)),
                                                 Device.Pins.D00,
                                                 Device.Pins.D01,
-                                                Device.Pins.D03);
+                                                Device.Pins.D03,
+                                                Dio3: Device.Pins.D06,
+                                                Dio4: Device.Pins.D05);
             _rfm9X = new Rfm9X(Resolver.Log,
                                config);
 

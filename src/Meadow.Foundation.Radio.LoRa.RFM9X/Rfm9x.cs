@@ -98,6 +98,8 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             _config = config;
             DeviceAddress = config.DeviceAddress;
             _frequencyManager = new LoRaFrequencyManager(config.Channels);
+            OnTransmitted += (sender, args) => _transmitCompleteTask?.SetResult(true);
+            OnReceived += (sender, args) => _receiveCompleteTask?.SetResult(args.Envelope);
         }
 
         public async ValueTask Initialize()
@@ -111,24 +113,6 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             WriteRegister(Register.PaConfig, 0xFF);
             WriteRegister(Register.PaRamp, (byte)((ReadRegister(Register.PaRamp) & 0xF0) | 0x80));
 
-            // 500kHz bandwidth
-            // 4/8 coding rate
-            // Implicit header mode
-            //WriteRegister(Register.ModemConfig1, 0b10011001);
-
-            // 4096 chirps/symbol
-            //WriteRegister(Register.ModemConfig2, 0b11000000);
-            //WriteRegister(Register.ModemConfig3, 0b00001100);
-            //if (_frequencyManager.UplinkBaseFrequency.Hertz < RfMidBandThreshold)
-            //{
-            //    WriteRegister(0x36, 0x02);
-            //    WriteRegister(0x3A, 0x7F);
-            //}
-            //else
-            //{
-            //    WriteRegister(0x36, 0x02);
-            //    WriteRegister(0x3A, 0x64);
-            //}
             SetMode(RegOpMode.OpMode.Sleep);
             _logger.Debug("Initialization complete");
         }
@@ -192,6 +176,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 // Create the TCS before we send a message to make sure we hear back properly.
                 _receiveCompleteTask = new TaskCompletionSource<Envelope>();
                 await SendInternal(messagePayload).ConfigureAwait(false);
+                // TODO: need precise timing to wait for the receive window to save power.
                 return await ReceiveInternal(timeout);
             }
             finally
@@ -227,10 +212,33 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 // Set the downlink frequency
                 SetFrequency(_frequencyManager.DownlinkBaseFrequency);
                 // Make sure the bandwidth, error coding rate, and header mode are right
-                WriteRegister(Register.ModemConfig1, 0b10011001);
+                WriteModemConfig1(_frequencyManager.DownlinkBandwidth, ErrorCodingRate.ECR4_5, ImplicitHeaderMode.Off);
+                WriteModemConfig2(SpreadingFactor.SF7, PayloadCrcMode.Off);
+                WriteModemConfig3();
+                // Maybe we need to set gain to 0x20|0x3?
+                WriteRegister(Register.MaxPayloadLength, 255);
+                var detectOptimize = ReadRegister(Register.DetectOptimize) & 0x78 | 0x03;
+                if (_frequencyManager.DownlinkBandwidth < LoRaChannels.Bandwidth500kHz)
+                {
+                    WriteRegister(Register.DetectOptimize, (byte)detectOptimize);
+                    WriteRegister(Register.IfFreq1,        0x40);
+                    WriteRegister(Register.IfFreq2,        0x40);
+                }
+                else
+                {
+                    WriteRegister(Register.DetectOptimize, (byte)(detectOptimize|0x80));
+                }
+                //WriteRegister(Register.ReceiveTimeoutLsb, );
+                WriteRegister(Register.InvertIq,           (byte)(ReadRegister(Register.InvertIq) |(1<<6)));
+                WriteRegister(Register.SyncWord,           0x34);
+                WriteRegister(Register.FifoAddressPointer, 0x00);
+                WriteRegister(Register.FifoRxByteAddress,  0x00);
+
+                // Put the interrupt pin into receive mode
+                WriteRegister(Register.DioMapping1, (byte)(DioMapping1.Dio0RxDone | DioMapping1.Dio1RxTimeout));
 
                 // Set the modem to receive
-                SetMode(RegOpMode.OpMode.ReceiveSingle);
+                SetMode(RegOpMode.OpMode.ReceiveContinuous);
 
                 if (_receiveCompleteTask == null)
                     throw new InvalidOperationException("ReceiveTask cannot be null");
@@ -271,32 +279,16 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
             try
             {
-                // Bandwidth
-                // 0000 -> 7.8 kHz
-                // 0001 -> 10.4 kHz
-                // 0010 -> 15.6 kHz
-                // 0011 -> 20.8kHz
-                // 0100 -> 31.25 kHz
-                // 0101 -> 41.7 kHz
-                // 0110 -> 62.5 kHz
-                // 0111 -> 125 kHz
-                // 1000 -> 250 kHz
-                // 1001 -> 500 kHz
-                // Error coding rate
-                // 001 -> 4/5
-                // 010 -> 4/6
-                // 011 -> 4/7
-                // 100 -> 4/8
-                //WriteRegister(Register.ModemConfig1,            0b01111000);
-                // Spread factor 8
-                //WriteRegister(Register.ModemConfig2,            0b11000100);
-                //WriteRegister(Register.ModemConfig3,            0b00001100);
-                WriteRegister(Register.SyncWord,                0x34);
+                WriteModemConfig1(_frequencyManager.UplinkBandwidth, ErrorCodingRate.ECR4_5, ImplicitHeaderMode.Off);
+                // The CRC mode should be on, but I'm having trouble with my gateway
+                WriteModemConfig2(SpreadingFactor.SF7, PayloadCrcMode.On);
+                WriteModemConfig3();
+                WriteRegister(Register.SyncWord, 0x34);
                 WriteRegister(Register.FifoTransmitBaseAddress, 0x00);
-                WriteRegister(Register.FifoAddressPointer,      0x00);
-                WriteRegister(Register.PayloadLength,           (byte)payload.Length);
-                WriteRegister(Register.Fifo,                    payload);
-                WriteRegister(Register.DioMapping1,             (byte)DioMapping1.Dio0TxDone);
+                WriteRegister(Register.FifoAddressPointer, 0x00);
+                WriteRegister(Register.PayloadLength, (byte)payload.Length);
+                WriteRegister(Register.Fifo, payload);
+                WriteRegister(Register.DioMapping1, (byte)DioMapping1.Dio0TxDone);
 
                 // Now actually transmit
                 SetMode(RegOpMode.OpMode.Transmit);
@@ -312,7 +304,6 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
         public void SetMode(RegOpMode.OpMode opMode)
         {
-            _logger.Debug($"Setting OpMode {((byte)opMode).ToHexString()}");
             var mode = new RegOpMode()
             {
                 LongRangeMode = true,
@@ -320,7 +311,6 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 Mode = opMode
             };
             WriteRegister(Register.OpMode, mode);
-            _logger.Trace($"Set OpMode {((byte)opMode).ToHexString()}");
         }
 
         private void TransceiverInterrupt(object sender, DigitalPortResult e)
@@ -337,17 +327,10 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             {
                 HandleReceiveDone();
             }
-
             if ((flags & (byte)InterruptFlagsMask.TransmitDone) == (byte)InterruptFlags.TransmitDone)
             {
                 HandleTransmitDone();
             }
-
-            // Put the interrupt pin into receive mode
-            WriteRegister(Register.DioMapping1, (byte)(DioMapping1.Dio0RxDone | DioMapping1.Dio1RxTimeout));
-
-            // Clear all the interrupts
-            WriteRegister(Register.InterruptFlags, (byte)InterruptFlags.ClearAll);
         }
 
         private void HandleReceiveDone()
@@ -357,10 +340,33 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             _fifoSemaphore.Wait();
             try
             {
+                // Check the interrupts
+                var interruptFlags = ReadRegister(Register.InterruptFlags);
+                if ((interruptFlags & (byte)InterruptFlags.ValidHeader) != (byte)InterruptFlags.ValidHeader)
+                {
+                    _logger.Debug("Invalid header");
+                }
+                if ((interruptFlags & (byte)InterruptFlags.PayloadCrcError) == (byte)InterruptFlags.PayloadCrcError)
+                {
+                    _logger.Debug("CRC Error");
+                }
+                if ((interruptFlags & (byte)InterruptFlags.ReceiveTimeout) == (byte)InterruptFlags.ReceiveTimeout)
+                {
+                    _logger.Debug("Receive Timeout, how did we get here??");
+                }
+                if ((interruptFlags & (byte)InterruptFlags.ReceiveDone) != (byte)InterruptFlags.ReceiveDone)
+                {
+                    _logger.Debug("Receive Done not set, how did we get here??");
+                }
+                // Clear all the interrupts
+                WriteRegister(Register.InterruptFlags, (byte)InterruptFlags.ReceiveDone);
+
                 var currentAddress = ReadRegister(Register.FifoReceiveCurrentAddress);
                 var envelopeLength = ReadRegister(Register.NumberOfReceivedBytes);
                 WriteRegister(Register.FifoAddressPointer, currentAddress);
-                var payload = new byte[envelopeLength];
+                //var payload = new byte[envelopeLength];
+                // Read the whole receive buffer
+                var payload = new byte[255];
                 ReadRegister(Register.Fifo, payload);
 
                 if (PayloadHasMinimumLength(payload) == false)
@@ -369,14 +375,13 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 var addressLength = (payload[0] >> 4) & 0xf;
                 var fromAddressLength = payload[0] & 0xf;
                 var messageLength = payload.Length - (AddressHeaderLength + addressLength + fromAddressLength);
-
+                _logger.Debug($"Address Length: {addressLength}, From Address Length: {fromAddressLength}, Message Length: {messageLength}");
                 var address = payload[(AddressHeaderLength + addressLength)..fromAddressLength];
                 var messageBytes = payload[(AddressHeaderLength + addressLength + fromAddressLength)..messageLength];
                 var envelope = new Envelope(address, messageBytes);
-                _receiveCompleteTask?.SetResult(envelope);
                 OnReceived?.Invoke(this, new OnDataReceivedEventArgs { Envelope = envelope });
 
-                SetMode(RegOpMode.OpMode.StandBy);
+                SetMode(RegOpMode.OpMode.Sleep);
             }
             finally
             {
@@ -393,9 +398,12 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
         private void HandleTransmitDone()
         {
+            // Clear all the interrupts
+            WriteRegister(Register.InterruptFlags, (byte)InterruptFlags.ClearAll);
+            
             _logger.Debug("Handling Transmit done");
             SetMode(RegOpMode.OpMode.Sleep);
-            _transmitCompleteTask?.SetResult(true);
+
             OnTransmitted?.Invoke(this, new OnDataTransmittedEventArgs());
         }
     }

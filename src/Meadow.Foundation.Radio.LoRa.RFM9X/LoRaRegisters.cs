@@ -453,7 +453,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
         {
             ReceiveTimeout = 0b10000000,
             ReceiveDone = 0b01000000,
-            PayLoadCrcError = 0b00100000,
+            PayloadCrcError = 0b00100000,
             ValidHeader = 0b00010000,
             TransmitDone = 0b00001000,
             CadDone = 0b00000100,
@@ -473,6 +473,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             Dio1CadDetected = 0b00100000,
         }
 
+        [Flags]
         public enum DioMapping2
         {
             Dio3CadDone = 0b00000000,
@@ -483,130 +484,207 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             Dio5ModeReady = 0b00000000,
             Dio5ClkOut = 0b00100000,
         }
+
+        public enum Bandwidth : byte
+        {
+            Bw7_8kHz = 0b00000000,
+            Bw10_4kHz = 0b00010000,
+            Bw15_6kHz = 0b00100000,
+            Bw20_8kHz = 0b00110000,
+            Bw31_25kHz = 0b01000000,
+            Bw41_7kHz = 0b01010000,
+            Bw62_5kHz = 0b01100000,
+            Bw125kHz = 0b01110000,
+            Bw250kHz = 0b10000000,
+            Bw500kHz = 0b10010000
+        }
+
+        public Bandwidth GetBandwidth(Frequency bandwidth)
+        {
+            return bandwidth.Hertz switch
+            {
+                7.8 => Bandwidth.Bw7_8kHz,
+                10.4 => Bandwidth.Bw10_4kHz,
+                15.6 => Bandwidth.Bw15_6kHz,
+                20.8 => Bandwidth.Bw20_8kHz,
+                31.25 => Bandwidth.Bw31_25kHz,
+                41.7 => Bandwidth.Bw41_7kHz,
+                62.5 => Bandwidth.Bw62_5kHz,
+                125 => Bandwidth.Bw125kHz,
+                250 => Bandwidth.Bw250kHz,
+                500 => Bandwidth.Bw500kHz,
+                _ => throw new ArgumentOutOfRangeException(nameof(bandwidth), "Invalid bandwidth")
+            };
+        }
+
+        public enum ErrorCodingRate : byte
+        {
+            ECR4_5 = 0b00000010,
+            ECR4_6 = 0b00000100,
+            ECR4_7 = 0b00000110,
+            ECR4_8 = 0b00001000
+        }
+
+        public enum ImplicitHeaderMode : byte
+        {
+            Off = 0b00000000,
+            On = 0b00000001
+        }
+
+        public enum SpreadingFactor : byte
+        {
+            SF6 = 0b01100000,
+            SF7 = 0b01110000,
+            SF8 = 0b10000000,
+            SF9 = 0b10010000,
+            SF10 = 0b10100000,
+            SF11 = 0b10110000,
+            SF12 = 0b11000000
+        }
+
+        public enum PayloadCrcMode : byte
+        {
+            Off = 0b00000000,
+            On = 0b00000100
+        }
     }
 
     public class LoRaChannels
     {
-        private static Frequency KHz125 = new Frequency(125, Kilohertz);
-        private static Frequency KHz500 = new Frequency(500, Kilohertz);
         public readonly Frequency UplinkBaseFrequency;
         public readonly Frequency UplinkChannelWidth;
+        public readonly Frequency UplinkBandwidth;
         public readonly int UplinkChannelCount;
         public readonly Frequency DownlinkBaseFrequency;
-        public readonly Frequency DownlinkWidth;
+        public readonly Frequency DownlinkChannelWidth;
+        public readonly Frequency DownlinkBandwidth;
         public readonly int DownlinkChannelCount;
-        public readonly int TransmitPower;
-        public readonly int MinDataRate;
-        public readonly int MaxDataRate;
 
-        private LoRaChannels(Frequency uplinkBaseFrequency, 
+        private LoRaChannels(Frequency uplinkBaseFrequency,
                              Frequency uplinkChannelWidth,
                              Frequency uplinkSignalBandwidth,
                              int uplinkChannelCount,
-                             Frequency downlinkBaseFrequency, 
-                             Frequency downlinkWidth,
+                             Frequency downlinkBaseFrequency,
+                             Frequency downlinkChannelWidth,
                              Frequency downlinkSignalBandwidth,
-                             int downlinkChannelCount,
-                             int minDataRate = 0,
-                             int maxDataRate = 3)
+                             int downlinkChannelCount)
         {
             UplinkBaseFrequency = uplinkBaseFrequency;
             UplinkChannelWidth = uplinkChannelWidth;
             UplinkChannelCount = uplinkChannelCount;
+            UplinkBandwidth = uplinkSignalBandwidth;
 
             DownlinkBaseFrequency = downlinkBaseFrequency;
-            DownlinkWidth = downlinkWidth;
+            DownlinkChannelWidth = downlinkChannelWidth;
             DownlinkChannelCount = downlinkChannelCount;
-            MinDataRate = minDataRate;
-            MaxDataRate = maxDataRate;
+            DownlinkBandwidth = downlinkSignalBandwidth;
         }
 
+        public static Frequency Bandwidth7_8kHz = new Frequency(7.8, Kilohertz);
+        public static Frequency Bandwidth10_4kHz = new Frequency(10.4, Kilohertz);
+        public static Frequency Bandwidth15_6kHz = new Frequency(15.6, Kilohertz);
+        public static Frequency Bandwidth20_8kHz = new Frequency(20.8, Kilohertz);
+        public static Frequency Bandwidth31_25kHz = new Frequency(31.25, Kilohertz);
+        public static Frequency Bandwidth41_7kHz = new Frequency(41.7, Kilohertz);
+        public static Frequency Bandwidth62_5kHz = new Frequency(62.5, Kilohertz);
+        public static Frequency Bandwidth125kHz = new Frequency(125, Kilohertz);
+        public static Frequency Bandwidth250kHz = new Frequency(250, Kilohertz);
+        public static Frequency Bandwidth500kHz = new Frequency(500, Kilohertz);
+
+        public static Frequency ChannelWidth200kHz = new Frequency(200, Kilohertz);
+        public static Frequency ChannelWidth600kHz = new Frequency(600, Kilohertz);
+
+
         public static LoRaChannels Us915Fsb1 = new(new Frequency(902.3, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb2 = new(new Frequency(903.9, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb3 = new(new Frequency(905.5, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb4 = new(new Frequency(907.1, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb5 = new(new Frequency(908.7, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb6 = new(new Frequency(910.3, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb7 = new(new Frequency(911.9, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
 
         public static LoRaChannels Us915Fsb8 = new(new Frequency(913.5, Megahertz),
-                                                   new Frequency(200,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth200kHz,
+                                                   Bandwidth125kHz,
                                                    8,
                                                    new Frequency(923.3, Megahertz),
-                                                   new Frequency(600,   Kilohertz),
-                                                   new Frequency(500,   Kilohertz),
+                                                   ChannelWidth600kHz,
+                                                   Bandwidth500kHz,
                                                    8);
     }
 
     internal class LoRaFrequencyManager(LoRaChannels channels)
     {
+        public readonly Frequency UplinkBandwidth = channels.UplinkBandwidth;
+        public readonly Frequency DownlinkBandwidth = channels.DownlinkBandwidth;
         public readonly Frequency UplinkBaseFrequency = channels.UplinkBaseFrequency;
         public readonly Frequency DownlinkBaseFrequency = channels.DownlinkBaseFrequency;
+
         private readonly Frequency[] _uplinkChannels = Enumerable.Range(0, channels.UplinkChannelCount)
                                                                  .Select(i => new Frequency(
                                                                              channels.UplinkBaseFrequency.Hertz
                                                                            + i * channels.UplinkChannelWidth.Hertz))
                                                                  .ToArray();
+
         private readonly Frequency[] _downlinkChannels = Enumerable.Range(0, channels.DownlinkChannelCount)
                                                                    .Select(i => new Frequency(
                                                                                channels.DownlinkBaseFrequency.Hertz
-                                                                             + i * channels.DownlinkWidth.Hertz))
+                                                                             + i * channels.DownlinkChannelWidth.Hertz))
                                                                    .ToArray();
 
         private int _currentChannel = 0;

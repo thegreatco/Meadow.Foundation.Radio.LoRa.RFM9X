@@ -12,17 +12,22 @@
     </ItemGroup>
     <ItemGroup>
         <None Include="meadow.config.yaml">
-            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
         <None Include="app.config.yaml">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
         <None Include="wifi.config.yaml">
-            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
     </ItemGroup>
     <ItemGroup>
       <ProjectReference Include="..\..\src\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj" />
       <ProjectReference Include="..\..\src\Meadow.Foundation.Radio.LoRaWan\Meadow.Foundation.Radio.LoRaWan.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+      <None Update="app.build.yaml">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 </Project>
