@@ -9,7 +9,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
     {
         private Rfm9X _rfm9X;
         private TheThingsNetwork _theThingsNetwork;
-        public override Task Initialize()
+        public override async Task Initialize()
         {
             var config = new Rfm9XConfiguration([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
                                                 LoRaChannels.Us915Fsb2,
@@ -28,13 +28,13 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             byte[] appKey = [0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67];
 
             _theThingsNetwork = new TheThingsNetwork(Resolver.Log, _rfm9X, devEui, appKey);
-            return base.Initialize();
+            await _theThingsNetwork.Initialize().ConfigureAwait(false);
+            await base.Initialize().ConfigureAwait(false);
         }
 
         public override async Task Run()
         {
-            await _theThingsNetwork.Initialize()
-                                   .ConfigureAwait(false);
+            _theThingsNetwork.SendMessage();
         }
     }
 }

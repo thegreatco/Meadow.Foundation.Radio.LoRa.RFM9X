@@ -66,33 +66,49 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
-    internal readonly record struct OtaaSettings
+    /// <summary>
+    /// Contains the settings for Over The Air Activation (OTAA) for a LoRaWAN device.
+    /// This also gets written to disk for persistence through a reboot.
+    /// </summary>
+    internal record struct OTAASettings
     {
-        public OtaaSettings(byte[] appKey, byte[] appNonce, byte[] networkId, byte[] deviceNonce)
+        public OTAASettings(byte[] appKey, byte[] appNonce, byte[] networkId, byte[] deviceNonce, byte[] deviceAddress)
         {
             AppKey = appKey;
             AppNonce = appNonce;
             NetworkId = networkId;
             DeviceNonce = deviceNonce;
+            DeviceAddress = deviceAddress;
+            FrameCounter = 0;
             NetworkSKey = GenerateNetworkSKey();
             AppSKey = GenerateAppSKey();
         }
 
-        public OtaaSettings(byte[] appKey, byte[] appNonce, byte[] networkId, byte[] deviceNonce, byte[] networkSKey, byte[] appSKey)
+        public OTAASettings(byte[] appKey, byte[] appNonce, byte[] networkId, byte[] deviceNonce, byte[] deviceAddress, int frameCounter, byte[] networkSKey, byte[] appSKey)
         {
             AppKey = appKey;
             AppNonce = appNonce;
             NetworkId = networkId;
             DeviceNonce = deviceNonce;
+            DeviceAddress = deviceAddress;
+            FrameCounter = frameCounter;
             NetworkSKey = networkSKey;
+            AppSKey = appSKey;
         }
 
         public byte[] AppKey { get; }
         public byte[] AppNonce { get; }
         public byte[] NetworkId { get; }
         public byte[] DeviceNonce { get; }
+        public byte[] DeviceAddress { get; }
+        public int FrameCounter { get; private set; }
         public byte[] NetworkSKey { get; }
         public byte[] AppSKey { get; }
+
+        public void IncFrameCounter()
+        {
+            FrameCounter++;
+        }
 
         private byte[] GenerateNetworkSKey()
         {

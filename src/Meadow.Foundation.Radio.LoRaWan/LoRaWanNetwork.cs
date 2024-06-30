@@ -1,5 +1,7 @@
 ﻿using System;
+using System.IO;
 using System.Threading.Tasks;
+
 using Meadow.Foundation.Serialization;
 using Meadow.Logging;
 
@@ -10,28 +12,54 @@ namespace Meadow.Foundation.Radio.LoRaWan
         private readonly Random _random = new();
         private static readonly byte[] DefaultAppEui = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         private readonly byte[] _appEui = appEui ?? DefaultAppEui;
+        private OTAASettings _settings;
 
         public async ValueTask Initialize()
         {
             await radio.Initialize().ConfigureAwait(false);
-            try
+            OTAASettings settings;
+            if (File.Exists("otaa_settings.json"))
             {
-                var joinResponse = await SendJoinRequest()
-                                       .ConfigureAwait(false);
-                logger.Debug($"JoinResponse Valid? {joinResponse.IsValid(appKey)}");
-                logger.Debug($"Join response: {MicroJson.Serialize(joinResponse)}");
+                var json = await File.ReadAllTextAsync("otaa_settings.json").ConfigureAwait(false);
+                settings = MicroJson.Deserialize<OTAASettings>(json);
             }
-            catch (TimeoutException tex)
+            else
             {
-                logger.Error(tex, "Join request timed out");
+            retry:
+                try
+                {
+                    var devNonce = BitConverter.GetBytes(_random.Next(ushort.MinValue, ushort.MaxValue + 1));
+                    var joinResponse = await SendJoinRequest(devNonce)
+                                           .ConfigureAwait(false);
+
+                    settings =
+                        new OTAASettings(appKey, joinResponse.JoinNonce, joinResponse.NetworkId, devNonce);
+
+                    await File.WriteAllTextAsync("otaa_settings.json", MicroJson.Serialize(settings)).ConfigureAwait(false);
+
+                }
+                catch (TimeoutException tex)
+                {
+                    logger.Error(tex, "Join request timed out");
+                    // This is bad, should probably not blindly loop forever.
+                    goto retry;
+                }
             }
+            _settings = settings;
         }
 
-        public void SendMessage() { }
-
-        private async ValueTask<JoinResponse> SendJoinRequest()
+        public void SendMessage(byte[] message)
         {
-            var devNonce = BitConverter.GetBytes(_random.Next(ushort.MinValue, ushort.MaxValue + 1));
+            var payload = new byte[13 + message.Length];
+            payload[0] = 0x40;
+            Array.Copy(_settings.DeviceAddress, 0, payload, 1, 4);
+            payload[5] = 0x00; // This is an uplink, a downlink would be 1
+            payload[6] = 0x00; // Low side of frame counter
+            payload[7] = BitConverter.GetBytes(_settings.FrameCounter)[0];
+        }
+
+        private async ValueTask<JoinResponse> SendJoinRequest(byte[] devNonce)
+        {
             var request = new JoinRequest(_appEui, devEui, appKey, devNonce);
             using var message = request.ToMessage();
             //while (true)
