@@ -10,6 +10,9 @@ Device:
     # Uncomment if SD card hardware present on this hardware 
     # (e.g., Core-Compute module with SD add-on)? Optional; default value is `false`.
 #    SdStorageSupported: true
+MonoControl:
+  # Options to pass to Mono via the command line.
+  Options: --debug
 
 # Control how the ESP coprocessor will start and operate.
 Coprocessor:

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
-
+using Meadow.Foundation.Serialization;
 using Meadow.Logging;
 
 namespace Meadow.Foundation.Radio.LoRaWan
@@ -18,7 +18,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
             {
                 var joinResponse = await SendJoinRequest()
                                        .ConfigureAwait(false);
-                Console.WriteLine($"Join response: {BitConverter.ToString(joinResponse.RawMessage).Replace("-", " ")}");
+                logger.Debug($"JoinResponse Valid? {joinResponse.IsValid(appKey)}");
+                logger.Debug($"Join response: {MicroJson.Serialize(joinResponse)}");
             }
             catch (TimeoutException tex)
             {
@@ -30,7 +31,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
         private async ValueTask<JoinResponse> SendJoinRequest()
         {
-            var request = new JoinRequest(_appEui, devEui, appKey, (ushort)_random.Next(0, ushort.MaxValue));
+            var devNonce = BitConverter.GetBytes(_random.Next(ushort.MinValue, ushort.MaxValue + 1));
+            var request = new JoinRequest(_appEui, devEui, appKey, devNonce);
             using var message = request.ToMessage();
             //while (true)
             //{
@@ -39,8 +41,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
             //    await Task.Delay(1000).ConfigureAwait(false);
             //}
             var res = await radio.SendAndReceive(message.Array[..message.Length], TimeSpan.FromMinutes(1));
-            logger.Info($"{BitConverter.ToString(res.MessagePayload).Replace("-", " ")}");
-            return new JoinResponse(res.MessagePayload);
+            logger.Debug(res.MessagePayload.ToHexString());
+            return new JoinResponse(appKey, res.MessagePayload);
         }
     }
 }

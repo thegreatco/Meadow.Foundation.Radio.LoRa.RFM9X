@@ -34,17 +34,4 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
         public IPin? Dio4 { get; } = Dio4;
         public IPin? Dio5 { get; } = Dio5;
     }
-
-    public static class Helpers
-    {
-        public static string ToHexString(this byte[] bytes)
-        {
-            return BitConverter.ToString(bytes).Replace("-", " ");
-        }
-
-        public static string ToHexString(this byte @byte)
-        {
-            return ToHexString([@byte]);
-        }
-    }
 }

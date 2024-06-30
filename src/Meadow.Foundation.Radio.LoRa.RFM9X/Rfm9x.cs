@@ -46,9 +46,15 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
         private readonly IDigitalOutputPort _resetPin;
         private readonly IDigitalOutputPort _chipSelect;
+#if !CUSTOM_SPI
         private readonly ISpiCommunications _comms;
+#endif
         private readonly Rfm9XConfiguration _config;
         private readonly LoRaFrequencyManager _frequencyManager;
+
+        private readonly Frequency _lowFrequencyMax = new(525, Frequency.UnitType.Megahertz);
+        private const int RssiHighFrequencyAdjust = -157;
+        private const int RssiLowFrequencyAdjust = -164;
 
         public byte[] DeviceAddress { get; }
 
@@ -56,7 +62,9 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                      Rfm9XConfiguration config)
         {
             _logger = logger;
+#if !CUSTOM_SPI
             _comms = new SpiCommunications(config.SpiBus, _chipSelect, config.SpiFrequency, writeBufferSize: 256);
+#endif
             _chipSelect = config.Device.CreateDigitalOutputPort(config.ChipSelectPin);
             _resetPin = config.Device.CreateDigitalOutputPort(config.ResetPin, true);
             _dio0 = config.Device.CreateDigitalInterruptPort(config.Dio0, InterruptMode.EdgeRising);
@@ -126,13 +134,13 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             WriteRegister(Register.FrfLsb, bytes[0]);
         }
 
-        private long GetFrequency()
+        private Frequency GetFrequency()
         {
             var msb = ReadRegister(Register.FrfMsb);
             var mid = ReadRegister(Register.FrfMid);
             var lsb = ReadRegister(Register.FrfLsb);
             var frequency = ((msb << 16) | (mid << 8) | lsb) * (32000000.0 / 524288.0);
-            return (long)frequency;
+            return new Frequency(frequency);
         }
 
         internal async ValueTask ResetChip()
@@ -216,23 +224,23 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 WriteModemConfig2(SpreadingFactor.SF7, PayloadCrcMode.Off);
                 WriteModemConfig3();
                 // Maybe we need to set gain to 0x20|0x3?
-                WriteRegister(Register.MaxPayloadLength, 255);
+                //WriteRegister(Register.MaxPayloadLength, 255);
                 var detectOptimize = ReadRegister(Register.DetectOptimize) & 0x78 | 0x03;
                 if (_frequencyManager.DownlinkBandwidth < LoRaChannels.Bandwidth500kHz)
                 {
                     WriteRegister(Register.DetectOptimize, (byte)detectOptimize);
-                    WriteRegister(Register.IfFreq1,        0x40);
-                    WriteRegister(Register.IfFreq2,        0x40);
+                    WriteRegister(Register.IfFreq1, 0x40);
+                    WriteRegister(Register.IfFreq2, 0x40);
                 }
                 else
                 {
-                    WriteRegister(Register.DetectOptimize, (byte)(detectOptimize|0x80));
+                    WriteRegister(Register.DetectOptimize, (byte)(detectOptimize | 0x80));
                 }
                 //WriteRegister(Register.ReceiveTimeoutLsb, );
-                WriteRegister(Register.InvertIq,           (byte)(ReadRegister(Register.InvertIq) |(1<<6)));
-                WriteRegister(Register.SyncWord,           0x34);
+                WriteRegister(Register.InvertIq, (byte)(ReadRegister(Register.InvertIq) | (1 << 6)));
+                WriteRegister(Register.SyncWord, 0x34);
                 WriteRegister(Register.FifoAddressPointer, 0x00);
-                WriteRegister(Register.FifoRxByteAddress,  0x00);
+                WriteRegister(Register.FifoRxByteAddress, 0x00);
 
                 // Put the interrupt pin into receive mode
                 WriteRegister(Register.DioMapping1, (byte)(DioMapping1.Dio0RxDone | DioMapping1.Dio1RxTimeout));
@@ -362,23 +370,44 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 WriteRegister(Register.InterruptFlags, (byte)InterruptFlags.ReceiveDone);
 
                 var currentAddress = ReadRegister(Register.FifoReceiveCurrentAddress);
-                var envelopeLength = ReadRegister(Register.NumberOfReceivedBytes);
+                _logger.Trace($"Current address: {currentAddress.ToHexString()}");
+                var dataLength = (ReadRegister(Register.ModemConfig1) & (byte)ImplicitHeaderMode.On) == (byte)ImplicitHeaderMode.On
+                                             ? ReadRegister(Register.PayloadLength)
+                                             : ReadRegister(Register.NumberOfReceivedBytes);
+                _logger.Trace($"Data length: {dataLength.ToHexString()}");
+
                 WriteRegister(Register.FifoAddressPointer, currentAddress);
-                //var payload = new byte[envelopeLength];
-                // Read the whole receive buffer
-                var payload = new byte[255];
-                ReadRegister(Register.Fifo, payload);
+                // Adding 1 because the first byte is throw-away
+                var payload = ReadRegister(Register.Fifo, dataLength);
+
+                _logger.Trace($"Data: {payload.ToHexString()}");
+
+                var snr = (int)ReadRegister(Register.LastPacketSnr);
+                var packetRssi = (int)ReadRegister(Register.LastPacketRssi);
+                var rssi = packetRssi;
+                if (GetFrequency() > _lowFrequencyMax)
+                {
+                    rssi += RssiHighFrequencyAdjust;
+                }
+                else
+                {
+                    rssi += RssiLowFrequencyAdjust;
+                }
+
+                if (snr < 0)
+                {
+                    rssi = rssi - (-snr >> 2);
+                }
+                else if (rssi > -100)
+                {
+                    rssi += (packetRssi / 15);
+                }
 
                 if (PayloadHasMinimumLength(payload) == false)
                     return;
 
-                var addressLength = (payload[0] >> 4) & 0xf;
-                var fromAddressLength = payload[0] & 0xf;
-                var messageLength = payload.Length - (AddressHeaderLength + addressLength + fromAddressLength);
-                _logger.Debug($"Address Length: {addressLength}, From Address Length: {fromAddressLength}, Message Length: {messageLength}");
-                var address = payload[(AddressHeaderLength + addressLength)..fromAddressLength];
-                var messageBytes = payload[(AddressHeaderLength + addressLength + fromAddressLength)..messageLength];
-                var envelope = new Envelope(address, messageBytes);
+                // I'm pretty sure we have to ignore the first byte here
+                var envelope = new Envelope((MessageType)payload[1], payload);
                 OnReceived?.Invoke(this, new OnDataReceivedEventArgs { Envelope = envelope });
 
                 SetMode(RegOpMode.OpMode.Sleep);
@@ -400,7 +429,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
         {
             // Clear all the interrupts
             WriteRegister(Register.InterruptFlags, (byte)InterruptFlags.ClearAll);
-            
+
             _logger.Debug("Handling Transmit done");
             SetMode(RegOpMode.OpMode.Sleep);
 

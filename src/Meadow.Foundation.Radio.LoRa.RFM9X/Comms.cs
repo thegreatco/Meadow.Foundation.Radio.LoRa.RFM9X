@@ -1,5 +1,5 @@
 ﻿using System;
-
+using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Units;
 
 using static Meadow.Foundation.Radio.LoRa.RFM9X.LoRaRegisters;
@@ -36,15 +36,14 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             _comms.WriteRegister((byte)register, bytes);
             _logger.Trace($"Wrote to register {register} with {bytes.ToHexString()}");
 #endif
-
         }
 
         private byte ReadRegister(Register register)
         {
             _logger.Debug($"Reading register {register}");
 #if CUSTOM_SPI
-            var writeCommand = 0x7F & (byte)register;
-            var writeBuffer = new byte[] { (byte)writeCommand, 0x00 };
+            var command = 0x7F & (byte)register;
+            var writeBuffer = new byte[] { (byte)command, 0x00 };
             var readBuffer = new byte[2];
             _config.SpiBus.Exchange(_chipSelect, writeBuffer, readBuffer);
             _logger.Trace($"Read register {((byte)register).ToHexString()} got {readBuffer.ToHexString()}");
@@ -54,18 +53,33 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             _logger.Trace($"Read register {((byte)register).ToHexString()} got {value.ToHexString()}");
 
 #endif
-
             return value;
+        }
+
+        private byte[] ReadRegister(Register register, int length)
+        {
+            _logger.Debug($"Reading register {register}");
+#if CUSTOM_SPI
+            var command = 0x7F & (byte)register;
+            var writeBuffer = new byte[length + 1];
+            writeBuffer[0] = (byte)command;
+            var buffer = new byte[length + 1];
+            _config.SpiBus.Exchange(_chipSelect, writeBuffer, buffer);
+#else
+            _comms.ReadRegister((byte)register, buffer);
+#endif
+            _logger.Trace($"Read register {((byte)register).ToHexString()} got {buffer.ToHexString()} bytes");
+            return buffer[1..];
         }
 
         private void ReadRegister(Register register, byte[] buffer)
         {
             _logger.Debug($"Reading register {register}");
 #if CUSTOM_SPI
-            var writeCommand = 0x80 | (byte)register;
+            var command = 0x7F & (byte)register;
             var writeBuffer = new byte[buffer.Length];
-            writeBuffer[0] = (byte)writeCommand;
-            _comms.ReadRegister((byte)register, buffer);
+            writeBuffer[0] = (byte)command;
+            _config.SpiBus.Exchange(_chipSelect, writeBuffer, buffer);
 #else
             _comms.ReadRegister((byte)register, buffer);
 #endif
@@ -88,10 +102,10 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                                 500   => Bandwidth.Bw500kHz,
                                 _     => throw new ArgumentOutOfRangeException(nameof(bandwidth), "Invalid bandwidth")
                             };
-            _logger.Trace($"Setting Bandwidth: {bw}, CodingRate: {codingRate}, ImplicitHeaderMode: {implicitHeaderMode}");
             var value = (byte)bw;
             value |= (byte)codingRate;
             value |= (byte)implicitHeaderMode;
+            _logger.Trace($"Setting Bandwidth: {bw}, CodingRate: {codingRate}, ImplicitHeaderMode: {implicitHeaderMode}");
             WriteRegister(Register.ModemConfig1, value);
         }
 

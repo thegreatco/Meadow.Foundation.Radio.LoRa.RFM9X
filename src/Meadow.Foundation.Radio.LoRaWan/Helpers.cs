@@ -23,4 +23,17 @@ namespace Meadow.Foundation.Radio.LoRaWan
             ArrayPool<T>.Shared.Return(_array);
         }
     }
+
+    public static class Helpers
+    {
+        public static string ToHexString(this byte[] bytes)
+        {
+            return $"0x{BitConverter.ToString(bytes).Replace("-", ", 0x")}";
+        }
+
+        public static string ToHexString(this byte @byte)
+        {
+            return ToHexString([@byte]);
+        }
+    }
 }

@@ -1,2 +1,2 @@
 Deploy:
-  NoLink: []    
+  NoLink: [System.Security.Cryptography.Algorithms, System.Security.Cryptography, System.Security.Cryptography.Primitives]
