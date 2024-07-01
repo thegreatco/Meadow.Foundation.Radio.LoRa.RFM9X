@@ -12,13 +12,17 @@ namespace Meadow.Foundation.Radio.LoRaWan
     {
         private static readonly byte[] DefaultAppEui = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         private readonly byte[] _appEui = appEui ?? DefaultAppEui;
-        private OtaaSettings _settings;
+        public OtaaSettings? _settings;
 
         public async ValueTask Initialize()
         {
             await radio.Initialize().ConfigureAwait(false);
-            OtaaSettings settings;
+
+#pragma warning disable CS0618 // Type or member is obsolete, stupid trimming
+            var settings = new OtaaSettings();
+#pragma warning restore CS0618 // Type or member is obsolete
             var settingsFile = Path.Combine(os.FileSystem.DataDirectory, "otaa_settings.json");
+            logger.Debug($"Using settings file: {settingsFile}");
             if (File.Exists(settingsFile))
             {
                 logger.Debug("Loading settings from file");
@@ -56,62 +60,129 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 }
             }
             _settings = settings;
+            // This is just an insanity check
+            ThrowIfSettingsNull();
         }
 
         public async ValueTask SendMessage(byte[] payload)
         {
-            logger.Debug("Building message");
-            var payloadLength = 13 + payload.Length;
-            var finalPayload = new byte[payloadLength + 4];
-            finalPayload[0] = 0x40;                                 // MHDR
-            Array.Copy(_settings.DeviceAddress, 0, finalPayload, 1, 4);
-            finalPayload[5] = 0;                                    // FCtrl
-            finalPayload[6] = (byte)(_settings.FrameCounter& 0xFF); // FCnt (low byte)
-            finalPayload[7] = 0;                                    // FCnt (high byte)
-            finalPayload[8] = 1;                                    // FPort
-            Array.Copy(payload, 0, finalPayload, 9, payload.Length);
-
-            EncryptPayload(finalPayload, payloadLength);
-
-            logger.Debug("Calculating MIC");
-            var mic = EncryptionTools.ComputeAesCMac(_settings.NetworkSKey, finalPayload[..payloadLength]);
-
-            Array.Copy(mic, 0, finalPayload, payloadLength, 4);
-
+            ThrowIfSettingsNull();
+            var finalPayload = EncodeMessage(payload, _settings!.DeviceAddress, _settings.FrameCounter, _settings.AppSKey, _settings.NetworkSKey);
             logger.Debug("Sending message");
             await radio.Send(finalPayload).ConfigureAwait(false);
+            await _settings!.IncFrameCounter().ConfigureAwait(false);
             logger.Debug("Finished sending message");
         }
 
-        private async ValueTask<JoinResponse> SendJoinRequest(DeviceNonce devNonce)
+        public static byte[] EncodeMessage(byte[] payload, byte[] deviceAddress, uint frameCounter, byte[] appSKey, byte[] networkSKey)
         {
-            var request = new JoinRequest(_appEui, devEui, appKey, devNonce);
-            var message = request.ToMessage();
-            var res = await radio.SendAndReceive(message, TimeSpan.FromMinutes(1));
-            logger.Debug(res.MessagePayload.ToHexString());
-            return new JoinResponse(appKey, res.MessagePayload);
+            //logger.Debug("Building message");
+            var macPayload = new byte[13 + payload.Length];
+            macPayload[0] = 0x40;                              // MHDR
+            Array.Copy(deviceAddress, 0, macPayload, 1, 4);    // DevAddr
+            macPayload[5] = 0;                                 // FCtrl
+            macPayload[6] = (byte)(frameCounter & 0xFF);       // FCnt (low byte)
+            macPayload[7] = (byte)((frameCounter >> 8) & 0xFF);// FCnt (high byte)
+            macPayload[8] = 0;                                 // FPort
+            Array.Copy(payload, 0, macPayload, 9, payload.Length);
+
+            var encryptedBytes = EncryptPayload(payload[1..],
+                                                appSKey,
+                                                deviceAddress,
+                                                frameCounter,
+                                                true);
+
+            Array.Copy(encryptedBytes, 0, macPayload, 9, encryptedBytes.Length);
+
+            //logger.Debug("Calculating MIC");
+            var mic = EncryptionTools.ComputeAesCMac(networkSKey, encryptedBytes);
+
+            var finalPayload = new byte[macPayload.Length + 4];
+            Array.Copy(macPayload, 0, finalPayload, 0,                 macPayload.Length);
+            Array.Copy(mic,        0, finalPayload, macPayload.Length, 4);
+            return finalPayload;
         }
 
-        private void EncryptPayload(byte[] payload, int payloadLength)
+        public static byte[] EncryptPayload(byte[] payload, byte[] appSKey, byte[] deviceAddress, uint frameCounter, bool uplink)
         {
+            // Initialize AES encryption in ECB mode. CTR mode is not directly supported in .NET but can be emulated using ECB.
+            using (Aes aes = new AesManaged())
+            {
+                aes.Mode = CipherMode.ECB;
+                aes.Padding = PaddingMode.None;
+                aes.Key = appSKey;
+
+                byte[] encryptedPayload = new byte[payload.Length];
+                byte[] blockA = new byte[16];
+                int blockCounter = 1;
+
+                for (int i = 0; i < payload.Length; i += 16)
+                {
+                    // Prepare the counter block (A)
+                    blockA[0] = 0x01;                             // Reserved bits
+                    blockA[5] = uplink ? (byte)0x00 : (byte)0x01; // Direction: 0 for uplink, 1 for downlink
+                    Array.Copy(deviceAddress, 0, blockA, 6, 4);   // Device address
+                    blockA[10] = (byte)(frameCounter & 0xFF);
+                    blockA[11] = (byte)((frameCounter >> 8) & 0xFF);
+                    blockA[12] = (byte)((frameCounter >> 16) & 0xFF);
+                    blockA[13] = (byte)((frameCounter >> 24) & 0xFF);
+                    blockA[14] = (byte)(blockCounter & 0xFF);
+                    blockA[15] = (byte)((blockCounter >> 8) & 0xFF);
+
+                    // Encrypt the counter block to get the keystream
+                    byte[] keystream = aes.CreateEncryptor().TransformFinalBlock(blockA, 0, blockA.Length);
+
+                    // XOR the payload with the keystream
+                    for (int j = 0; j < 16 && (i + j) < payload.Length; j++)
+                    {
+                        encryptedPayload[i + j] = (byte)(payload[i + j] ^ keystream[j]);
+                    }
+
+                    blockCounter++;
+                }
+
+                return encryptedPayload;
+            }
+        }
+
+        private void EncryptPayload(byte[] payload)
+        {
+            ThrowIfSettingsNull();
+
             logger.Trace("Encrypting payload, building block");
-            var blockA = new byte[13 + payloadLength];
-            blockA[0] = 0x40;
-            Array.Copy(_settings.DeviceAddress, 0, blockA, 1, 4);
-            blockA[5] = 0x00; // This is an uplink, a downlink would be 1
-            blockA[6] = 0x00; // Low side of frame counter
-            blockA[7] = BitConverter.GetBytes(_settings.FrameCounter)[0];
+            var counterBlock = new byte[13 + payload.Length];
+            counterBlock[0] = 0x40;
+            Array.Copy(_settings!.DeviceAddress, 0, counterBlock, 1, 4);
+            counterBlock[5] = 0x00; // This is an uplink, a downlink would be 1
+            counterBlock[6] = 0x00; // Low side of frame counter
+            counterBlock[7] = BitConverter.GetBytes(_settings.FrameCounter)[0];
 
             logger.Trace("Starting AES encrypt");
             using Aes aes = new AesManaged();
             aes.Key = _settings.AppSKey;
+            aes.Mode = CipherMode.ECB;
             using var encryptor = aes.CreateEncryptor();
-            var s = encryptor.TransformFinalBlock(blockA, 0, 16);
-            for (var i = 0; i < payloadLength; i++)
+            var s = encryptor.TransformFinalBlock(counterBlock, 0, 16);
+            for (var i = 0; i < payload.Length; i++)
             {
                 payload[i] = (byte)(payload[i] ^ s[i]);
             }
             logger.Trace("Finished encrypting payload");
+        }
+
+        private async ValueTask<JoinAcceptPacket> SendJoinRequest(DeviceNonce devNonce)
+        {
+            var request = new JoinRequestPacket(_appEui, devEui, appKey, devNonce.Value);
+            var message = request.PhyPayload;
+            var res = await radio.SendAndReceive(message, TimeSpan.FromMinutes(1));
+            logger.Debug(res.MessagePayload.ToHexString());
+            return new JoinAcceptPacket(res.MessagePayload);
+        }
+
+        private void ThrowIfSettingsNull()
+        {
+            if (_settings == null)
+                throw new InvalidOperationException("Settings cannot be null");
         }
     }
 }

@@ -176,7 +176,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             SetMode(RegOpMode.OpMode.StandBy);
         }
 
-        public async ValueTask<Envelope> SendAndReceive(byte[] messagePayload, TimeSpan timeout)
+        public async ValueTask<Envelope> SendAndReceive(ReadOnlyMemory<byte> messagePayload, TimeSpan timeout)
         {
             await _opSemaphore.WaitAsync();
             try
@@ -260,7 +260,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             }
         }
 
-        private async ValueTask SendInternal(byte[] payload)
+        private async ValueTask SendInternal(ReadOnlyMemory<byte> payload)
         {
             _logger.Debug($"{DateTime.UtcNow} Sending message of {payload.Length}bytes");
             byte currentMode;

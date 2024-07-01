@@ -23,13 +23,33 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             WriteRegister((byte)register, bytes);
         }
 
+        private void WriteRegister(Register register, ReadOnlyMemory<byte> bytes)
+        {
+            WriteRegister((byte)register, bytes.Span);
+        }
+
+        private void WriteRegister(byte register, ReadOnlySpan<byte> bytes)
+        {
+            _logger.Debug($"Writing to register {register.ToHexString()} with {bytes.ToHexString()}");
+#if CUSTOM_SPI
+            Span<byte> writeBuffer = new byte[bytes.Length + 1];
+            writeBuffer[0] = (byte)(0x80 | register);
+            bytes.CopyTo(writeBuffer[1..]);
+            _config.SpiBus.Write(_chipSelect, writeBuffer);
+            _logger.Trace($"Wrote to register {register.ToHexString()} with {writeBuffer.ToHexString()}");
+#else
+            _comms.WriteRegister((byte)register, bytes);
+            _logger.Trace($"Wrote to register {register} with {bytes.ToHexString()}");
+#endif
+        }
+
         private void WriteRegister(byte register, byte[] bytes)
         {
             _logger.Debug($"Writing to register {register.ToHexString()} with {bytes.ToHexString()}");
 #if CUSTOM_SPI
-            var writeBuffer = new byte[bytes.Length + 1];
+            Span<byte> writeBuffer = new byte[bytes.Length + 1];
             writeBuffer[0] = (byte)(0x80 | register);
-            bytes.CopyTo(writeBuffer, 1);
+            bytes.CopyTo(writeBuffer[1..]);
             _config.SpiBus.Write(_chipSelect, writeBuffer);
             _logger.Trace($"Wrote to register {register.ToHexString()} with {writeBuffer.ToHexString()}");
 #else

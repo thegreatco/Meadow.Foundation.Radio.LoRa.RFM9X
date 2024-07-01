@@ -108,14 +108,118 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public static class Helpers
     {
-        public static string ToHexString(this byte[] bytes)
+        public static string ToHexString(this byte[] bytes, bool prefix = true)
         {
-            return $"0x{BitConverter.ToString(bytes).Replace("-", ", 0x")}";
+            return prefix
+                       ? $"0x{BitConverter.ToString(bytes).Replace("-", ", 0x")}"
+                       : $"{BitConverter.ToString(bytes).Replace("-",   "")}";
         }
 
-        public static string ToHexString(this byte @byte)
+        public static string ToHexString(this byte @byte, bool prefix = true)
         {
             return ToHexString([@byte]);
+        }
+
+        public static string ToHexString(this ReadOnlyMemory<byte> memory, bool prefix = false)
+        {
+            return memory.Span.ToHexString(prefix);
+        }
+
+        public static string ToHexString(this ReadOnlySpan<byte> span, bool prefix = false)
+        {
+            if (span.Length == 0)
+                return string.Empty;
+            var chars = new char[span.Length * 2 + (prefix ? 3 : 0)];
+            var offset = 0;
+            foreach(var b in span)
+            {
+                var hex = b.ToString("X2");
+                chars[offset] = hex[0];
+                chars[offset + 1] = hex[1];
+                if (prefix)
+                {
+                    chars[offset + 2] = ',';
+                    chars[offset + 3] = ' ';
+                    offset+=4;
+                }
+                else
+                {
+                    offset += 2;
+                }
+            }
+
+            return new string(chars);
+        }
+
+        public static string ToHexString(this Memory<byte> memory, bool prefix = false)
+        {
+            return memory.Span.ToHexString(prefix);
+        }
+
+        public static string ToHexString(this Span<byte> span, bool prefix = false)
+        {
+            if (span.Length == 0)
+                return string.Empty;
+            var chars = new char[span.Length * 2 + (prefix ? 3 : 0)];
+            var offset = 0;
+            foreach(var b in span)
+            {
+                var hex = b.ToString("X2");
+                chars[offset] = hex[0];
+                chars[offset + 1] = hex[1];
+                if (prefix)
+                {
+                    chars[offset + 2] = ',';
+                    chars[offset + 3] = ' ';
+                    offset+=4;
+                }
+                else
+                {
+                    offset += 2;
+                }
+            }
+
+            return new string(chars);
+        }
+
+        public static void CopyToReverse<T>(this ReadOnlySpan<T> src, T[] dest)
+        {
+            if (dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for(var i = 0; i < src.Length; i++)
+            {
+                dest[i] = src[src.Length - i - 1];
+            }
+        }
+
+        public static void CopyToReverse<T>(this ReadOnlySpan<T> src, Span<T> dest)
+        {
+            if (dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for(var i = 0; i < src.Length; i++)
+            {
+                dest[i] = src[src.Length - i - 1];
+            }
+        }
+
+        public static void CopyToReverse<T>(this T[] src, T[] dest)
+        {
+            if (dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for(var i = 0; i < src.Length; i++)
+            {
+                dest[i] = src[src.Length - i - 1];
+            }
+        }
+
+        public static void CopyToReverse<T>(this T[] src, T[] dest, int destOffset)
+        {
+            if (destOffset + dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for(var i = 0; i < src.Length; i++)
+            {
+                dest[destOffset + i] = src[src.Length - i - 1];
+            }
         }
     }
 }

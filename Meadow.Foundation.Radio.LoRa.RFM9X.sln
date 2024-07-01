@@ -7,9 +7,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Examples", "Examples", "{BA
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Meadow.Foundation.Radio.LoRa.RFM9X", "Examples\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj", "{6BFBBFB5-A529-4F01-B30E-F553E5F2DEDF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meadow.Foundation.Radio.LoRa.RFM9X", "src\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj", "{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Meadow.Foundation.Radio.LoRa.RFM9X", "src\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj", "{C50EF19E-E3FE-48B5-A9F3-B0484D33A538}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meadow.Foundation.Radio.LoRaWan", "src\Meadow.Foundation.Radio.LoRaWan\Meadow.Foundation.Radio.LoRaWan.csproj", "{A521E3C7-7262-4666-910D-C6F840847221}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Meadow.Foundation.Radio.LoRaWan", "src\Meadow.Foundation.Radio.LoRaWan\Meadow.Foundation.Radio.LoRaWan.csproj", "{A521E3C7-7262-4666-910D-C6F840847221}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meadow.Foundation.Radio.LoRaWan.Test", "test\Meadow.Foundation.Radio.LoRaWan.Test\Meadow.Foundation.Radio.LoRaWan.Test.csproj", "{12D840B7-560F-4940-8EAF-59EA3A464086}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -31,6 +33,10 @@ Global
 		{A521E3C7-7262-4666-910D-C6F840847221}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A521E3C7-7262-4666-910D-C6F840847221}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A521E3C7-7262-4666-910D-C6F840847221}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12D840B7-560F-4940-8EAF-59EA3A464086}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12D840B7-560F-4940-8EAF-59EA3A464086}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12D840B7-560F-4940-8EAF-59EA3A464086}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12D840B7-560F-4940-8EAF-59EA3A464086}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
