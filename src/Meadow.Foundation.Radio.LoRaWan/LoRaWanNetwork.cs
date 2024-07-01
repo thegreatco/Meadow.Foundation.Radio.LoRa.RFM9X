@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 using Meadow.Foundation.Serialization;
@@ -7,36 +8,45 @@ using Meadow.Logging;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    public abstract class LoRaWanNetwork(Logger logger, ILoRaRadio radio, byte[] devEui, byte[] appKey, byte[]? appEui = null)
+    public abstract class LoRaWanNetwork(Logger logger, IPlatformOS os, ILoRaRadio radio, byte[] devEui, byte[] appKey, byte[]? appEui = null)
     {
-        private readonly Random _random = new();
         private static readonly byte[] DefaultAppEui = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         private readonly byte[] _appEui = appEui ?? DefaultAppEui;
-        private OTAASettings _settings;
+        private OtaaSettings _settings;
 
         public async ValueTask Initialize()
         {
             await radio.Initialize().ConfigureAwait(false);
-            OTAASettings settings;
-            if (File.Exists("otaa_settings.json"))
+            OtaaSettings settings;
+            var settingsFile = Path.Combine(os.FileSystem.DataDirectory, "otaa_settings.json");
+            if (File.Exists(settingsFile))
             {
-                var json = await File.ReadAllTextAsync("otaa_settings.json").ConfigureAwait(false);
-                settings = MicroJson.Deserialize<OTAASettings>(json);
+                logger.Debug("Loading settings from file");
+                await using var s = File.Open(settingsFile, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+                using var sr = new StreamReader(s);
+                var b = await sr.ReadToEndAsync();
+                settings = MicroJson.Deserialize<OtaaSettings>(b);
+                logger.Debug("Successfully read settings from file");
             }
             else
             {
             retry:
                 try
                 {
-                    var devNonce = BitConverter.GetBytes(_random.Next(ushort.MinValue, ushort.MaxValue + 1));
+                    logger.Debug("Activating new device");
+                    var devNonce = DeviceNonce.GenerateNewNonce();
                     var joinResponse = await SendJoinRequest(devNonce)
                                            .ConfigureAwait(false);
 
+                    logger.Debug("Device activated successfully");
                     settings =
-                        new OTAASettings(appKey, joinResponse.JoinNonce, joinResponse.NetworkId, devNonce);
+                        new OtaaSettings(appKey, joinResponse, devNonce);
 
-                    await File.WriteAllTextAsync("otaa_settings.json", MicroJson.Serialize(settings)).ConfigureAwait(false);
-
+                    await using var s = File.Open(settingsFile, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
+                    await using var sw = new StreamWriter(s);
+                    await sw.WriteAsync(MicroJson.Serialize(settings))
+                            .ConfigureAwait(false);
+                    logger.Debug("Wrote settings to file");
                 }
                 catch (TimeoutException tex)
                 {
@@ -48,29 +58,60 @@ namespace Meadow.Foundation.Radio.LoRaWan
             _settings = settings;
         }
 
-        public void SendMessage(byte[] message)
+        public async ValueTask SendMessage(byte[] payload)
         {
-            var payload = new byte[13 + message.Length];
-            payload[0] = 0x40;
-            Array.Copy(_settings.DeviceAddress, 0, payload, 1, 4);
-            payload[5] = 0x00; // This is an uplink, a downlink would be 1
-            payload[6] = 0x00; // Low side of frame counter
-            payload[7] = BitConverter.GetBytes(_settings.FrameCounter)[0];
+            logger.Debug("Building message");
+            var payloadLength = 13 + payload.Length;
+            var finalPayload = new byte[payloadLength + 4];
+            finalPayload[0] = 0x40;                                 // MHDR
+            Array.Copy(_settings.DeviceAddress, 0, finalPayload, 1, 4);
+            finalPayload[5] = 0;                                    // FCtrl
+            finalPayload[6] = (byte)(_settings.FrameCounter& 0xFF); // FCnt (low byte)
+            finalPayload[7] = 0;                                    // FCnt (high byte)
+            finalPayload[8] = 1;                                    // FPort
+            Array.Copy(payload, 0, finalPayload, 9, payload.Length);
+
+            EncryptPayload(finalPayload, payloadLength);
+
+            logger.Debug("Calculating MIC");
+            var mic = EncryptionTools.ComputeAesCMac(_settings.NetworkSKey, finalPayload[..payloadLength]);
+
+            Array.Copy(mic, 0, finalPayload, payloadLength, 4);
+
+            logger.Debug("Sending message");
+            await radio.Send(finalPayload).ConfigureAwait(false);
+            logger.Debug("Finished sending message");
         }
 
-        private async ValueTask<JoinResponse> SendJoinRequest(byte[] devNonce)
+        private async ValueTask<JoinResponse> SendJoinRequest(DeviceNonce devNonce)
         {
             var request = new JoinRequest(_appEui, devEui, appKey, devNonce);
-            using var message = request.ToMessage();
-            //while (true)
-            //{
-            //    logger.Info($"Sending join message {BitConverter.ToString(message.Array[..message.Length]).Replace("-", " ")}");
-            //    await radio.Send(message.Array[..message.Length]).ConfigureAwait(false);
-            //    await Task.Delay(1000).ConfigureAwait(false);
-            //}
-            var res = await radio.SendAndReceive(message.Array[..message.Length], TimeSpan.FromMinutes(1));
+            var message = request.ToMessage();
+            var res = await radio.SendAndReceive(message, TimeSpan.FromMinutes(1));
             logger.Debug(res.MessagePayload.ToHexString());
             return new JoinResponse(appKey, res.MessagePayload);
+        }
+
+        private void EncryptPayload(byte[] payload, int payloadLength)
+        {
+            logger.Trace("Encrypting payload, building block");
+            var blockA = new byte[13 + payloadLength];
+            blockA[0] = 0x40;
+            Array.Copy(_settings.DeviceAddress, 0, blockA, 1, 4);
+            blockA[5] = 0x00; // This is an uplink, a downlink would be 1
+            blockA[6] = 0x00; // Low side of frame counter
+            blockA[7] = BitConverter.GetBytes(_settings.FrameCounter)[0];
+
+            logger.Trace("Starting AES encrypt");
+            using Aes aes = new AesManaged();
+            aes.Key = _settings.AppSKey;
+            using var encryptor = aes.CreateEncryptor();
+            var s = encryptor.TransformFinalBlock(blockA, 0, 16);
+            for (var i = 0; i < payloadLength; i++)
+            {
+                payload[i] = (byte)(payload[i] ^ s[i]);
+            }
+            logger.Trace("Finished encrypting payload");
         }
     }
 }

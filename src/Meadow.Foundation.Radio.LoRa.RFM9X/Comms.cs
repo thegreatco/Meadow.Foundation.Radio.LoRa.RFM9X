@@ -28,7 +28,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             _logger.Debug($"Writing to register {register.ToHexString()} with {bytes.ToHexString()}");
 #if CUSTOM_SPI
             var writeBuffer = new byte[bytes.Length + 1];
-            writeBuffer[0] = (byte)(0x80 | (byte)register);
+            writeBuffer[0] = (byte)(0x80 | register);
             bytes.CopyTo(writeBuffer, 1);
             _config.SpiBus.Write(_chipSelect, writeBuffer);
             _logger.Trace($"Wrote to register {register.ToHexString()} with {writeBuffer.ToHexString()}");

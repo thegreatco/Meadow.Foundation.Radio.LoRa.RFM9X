@@ -2,28 +2,41 @@
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    internal record struct JoinRequest(byte[] JoinEui, byte[] DevEui, byte[] AppKey, byte[] DevNonce)
+    public record struct DeviceNonce(byte[] Value)
     {
-        public readonly RentedArray<byte> ToMessage()
+        public static DeviceNonce GenerateNewNonce()
+        {
+            var random = new Random();
+            var nonce = new byte[2];
+            random.NextBytes(nonce);
+            return new DeviceNonce(nonce);
+        }
+    }
+
+    public record struct EncryptedMessage(byte[] Value);
+
+    public record struct JoinRequest(byte[] JoinEui, byte[] DevEui, byte[] AppKey, DeviceNonce DevNonce)
+    {
+        public readonly byte[] ToMessage()
         {
             byte messageHeader = 0x00;
-            var joinRequestMessage = new RentedArray<byte>(23);
-            joinRequestMessage.Array[0] = messageHeader; // MHDR join should be 0x00
-            Array.Copy(JoinEui, 0, joinRequestMessage.Array, 1, 8);
-            Array.Copy(DevEui, 0, joinRequestMessage.Array, 9, 8);
-            Array.Copy(DevNonce, 0, joinRequestMessage.Array, 17, 2);
+            var joinRequestMessage = new byte[23];
+            joinRequestMessage[0] = messageHeader; // MHDR join should be 0x00
+            Array.Copy(JoinEui, 0, joinRequestMessage, 1, 8);
+            Array.Copy(DevEui, 0, joinRequestMessage, 9, 8);
+            Array.Copy(DevNonce.Value, 0, joinRequestMessage, 17, 2);
 
             // Compute MIC here and fill in the last 4 bytes of joinRequestMessage with the MIC value
-            var computedMic = EncryptionTools.ComputeAesCMac(AppKey, joinRequestMessage.Array[..19]);
+            var computedMic = EncryptionTools.ComputeAesCMac(AppKey, joinRequestMessage[..19]);
 
             // Only take the first 4 bytes
-            Array.Copy(computedMic, 0, joinRequestMessage.Array, 19, 4);
+            Array.Copy(computedMic, 0, joinRequestMessage, 19, 4);
 
             return joinRequestMessage;
         }
     }
 
-    internal readonly record struct JoinResponse
+    public readonly record struct JoinResponse
     {
         public JoinResponse(byte[] appKey, byte[] message)
         {
@@ -70,40 +83,28 @@ namespace Meadow.Foundation.Radio.LoRaWan
     /// Contains the settings for Over The Air Activation (OTAA) for a LoRaWAN device.
     /// This also gets written to disk for persistence through a reboot.
     /// </summary>
-    internal record struct OTAASettings
+    public record struct OtaaSettings
     {
-        public OTAASettings(byte[] appKey, byte[] appNonce, byte[] networkId, byte[] deviceNonce, byte[] deviceAddress)
+        public OtaaSettings(byte[] appKey, JoinResponse joinResponse, DeviceNonce deviceNonce)
         {
             AppKey = appKey;
-            AppNonce = appNonce;
-            NetworkId = networkId;
+            AppNonce = joinResponse.JoinNonce;
+            NetworkId = joinResponse.NetworkId;
+            DeviceAddress = joinResponse.DeviceAddress;
             DeviceNonce = deviceNonce;
-            DeviceAddress = deviceAddress;
             FrameCounter = 0;
             NetworkSKey = GenerateNetworkSKey();
             AppSKey = GenerateAppSKey();
         }
 
-        public OTAASettings(byte[] appKey, byte[] appNonce, byte[] networkId, byte[] deviceNonce, byte[] deviceAddress, int frameCounter, byte[] networkSKey, byte[] appSKey)
-        {
-            AppKey = appKey;
-            AppNonce = appNonce;
-            NetworkId = networkId;
-            DeviceNonce = deviceNonce;
-            DeviceAddress = deviceAddress;
-            FrameCounter = frameCounter;
-            NetworkSKey = networkSKey;
-            AppSKey = appSKey;
-        }
-
-        public byte[] AppKey { get; }
-        public byte[] AppNonce { get; }
-        public byte[] NetworkId { get; }
-        public byte[] DeviceNonce { get; }
-        public byte[] DeviceAddress { get; }
+        public byte[] AppKey { get; set; }
+        public byte[] AppNonce { get; set; }
+        public byte[] NetworkId { get; set; }
+        public DeviceNonce DeviceNonce { get; set; }
+        public byte[] DeviceAddress { get; set; }
         public int FrameCounter { get; private set; }
-        public byte[] NetworkSKey { get; }
-        public byte[] AppSKey { get; }
+        public byte[] NetworkSKey { get; set; }
+        public byte[] AppSKey { get; set; }
 
         public void IncFrameCounter()
         {
@@ -116,7 +117,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             bytes[0] = 0x01;
             Array.Copy(AppNonce, 0, bytes, 1, AppNonce.Length);
             Array.Copy(NetworkId, 0, bytes, 1 + AppNonce.Length, NetworkId.Length);
-            Array.Copy(DeviceNonce, 0, bytes, 1 + AppNonce.Length + NetworkId.Length, DeviceNonce.Length);
+            Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Length + NetworkId.Length, DeviceNonce.Value.Length);
 
             return EncryptionTools.EncryptMessage(AppKey, bytes);
         }
@@ -127,7 +128,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             bytes[0] = 0x02;
             Array.Copy(AppNonce,    0, bytes, 1,                                      AppNonce.Length);
             Array.Copy(NetworkId,   0, bytes, 1 + AppNonce.Length,                    NetworkId.Length);
-            Array.Copy(DeviceNonce, 0, bytes, 1 + AppNonce.Length + NetworkId.Length, DeviceNonce.Length);
+            Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Length + NetworkId.Length, DeviceNonce.Value.Length);
 
             return EncryptionTools.EncryptMessage(AppKey, bytes);
         }

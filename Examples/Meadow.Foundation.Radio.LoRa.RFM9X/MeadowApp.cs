@@ -1,4 +1,5 @@
-﻿using Meadow.Devices;
+﻿using System.Text;
+using Meadow.Devices;
 using System.Threading.Tasks;
 using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Units;
@@ -27,14 +28,14 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             byte[] devEui = [0x06, 0x31, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70];
             byte[] appKey = [0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67];
 
-            _theThingsNetwork = new TheThingsNetwork(Resolver.Log, _rfm9X, devEui, appKey);
+            _theThingsNetwork = new TheThingsNetwork(Resolver.Log, Device.PlatformOS, _rfm9X, devEui, appKey);
             await _theThingsNetwork.Initialize().ConfigureAwait(false);
             await base.Initialize().ConfigureAwait(false);
         }
 
         public override async Task Run()
         {
-            _theThingsNetwork.SendMessage();
+            await _theThingsNetwork.SendMessage("Hello!"u8.ToArray()).ConfigureAwait(false);
         }
     }
 }
