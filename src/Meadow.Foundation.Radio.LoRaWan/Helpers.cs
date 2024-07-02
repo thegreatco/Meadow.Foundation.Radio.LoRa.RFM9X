@@ -212,6 +212,16 @@ namespace Meadow.Foundation.Radio.LoRaWan
             }
         }
 
+        public static void CopyToReverse<T>(this T[] src, Span<T> dest)
+        {
+            if (dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for(var i = 0; i < src.Length; i++)
+            {
+                dest[i] = src[src.Length - i - 1];
+            }
+        }
+
         public static void CopyToReverse<T>(this T[] src, T[] dest, int destOffset)
         {
             if (destOffset + dest.Length < src.Length)
@@ -220,6 +230,49 @@ namespace Meadow.Foundation.Radio.LoRaWan
             {
                 dest[destOffset + i] = src[src.Length - i - 1];
             }
+        }
+
+        public static T[] Reverse<T>(this T[] array)
+        {
+            var newArray = new T[array.Length];
+            for(var i = 0; i < array.Length; i++)
+            {
+                newArray[i] = array[array.Length - i - 1];
+            }
+
+            return newArray;
+        }
+
+        public static T[] Reverse<T>(this Span<T> array)
+        {
+            var newArray = new T[array.Length];
+            for(var i = 0; i < array.Length; i++)
+            {
+                newArray[i] = array[array.Length - i - 1];
+            }
+
+            return newArray;
+        }
+
+        public static T[] Reverse<T>(this ReadOnlySpan<T> array)
+        {
+            var newArray = new T[array.Length];
+            for(var i = 0; i < array.Length; i++)
+            {
+                newArray[i] = array[array.Length - i - 1];
+            }
+
+            return newArray;
+        }
+
+        public static T[] Reverse<T>(this ReadOnlyMemory<T> array)
+        {
+            return array.Span.Reverse();
+        }
+
+        public static T[] Reverse<T>(this Memory<T> array)
+        {
+            return array.Span.Reverse();
         }
     }
 }

@@ -24,45 +24,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
         public byte[]? RejoinType { get; set; }
 
-        public static Packet DecodePacket(byte[] appKey, ROM data)
-        {
-            var packetType = (PacketType)((data[..1].Span[0] & 0b11100000) >> 5);
-            switch (packetType)
-            {
-                case PacketType.JoinRequest:
-                    if (data.Length < 23)
-                    {
-                        throw new ArgumentException("Invalid Join Request packet length");
-                    }
-                    return new JoinRequestPacket(data);
-                case PacketType.JoinResponse:
-                    if (data.Length < 17)
-                    {
-                        throw new ArgumentException("Invalid Join Response packet length");
-                    }
-                    // TODO: Avoid this allocation
-                    var decryptedData = EncryptionTools.DecryptMessage(appKey, data[1..]);
-                    var d = new byte[1+ decryptedData.Length];
-                    d[0] = data.Span[0];
-                    decryptedData.CopyTo(d.AsSpan(1));
-                    Console.WriteLine($"Decrypted data: {d.ToHexString(false)}");
-                    return new JoinAcceptPacket(d);
-                case PacketType.RejoinRequest:
-                    throw new NotImplementedException("rejoin packets are not implemented");
-                    return new RejoinType1RequestPacket(data);
-                case PacketType.UnconfirmedDataUp:
-                    return new UnconfirmedDataUpPacket(data);
-                case PacketType.UnconfirmedDataDown:
-                    return new UnconfirmedDataDownPacket(data);
-                case PacketType.ConfirmedDataUp:
-                    return new ConfirmedDataUpPacket(data);
-                case PacketType.ConfirmedDataDown:
-                    return new ConfirmedDataDownPacket(data);
-                default:
-                    throw new NotImplementedException();
-            }
-        }
-
         public bool VerifyMic(byte[] key)
         {
             return false;
@@ -90,7 +51,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public class JoinRequestPacket : Packet
     {
-        public JoinRequestPacket(byte[] appKey, ROM appEui, ROM devEui, ROM devNonce)
+        public JoinRequestPacket(AppKey appKey, ROM appEui, ROM devEui, ROM devNonce)
         {
             AppEui = appEui;
             DevEui = devEui;
@@ -106,7 +67,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
             // Calculate the message integrity check
             Console.WriteLine("Calculating MIC");
-            var mic = CalculateMic(appKey);
+            var mic = CalculateMic(appKey.Value);
             Mic = mic;
 
             // Add this to the MAC payload
@@ -123,6 +84,10 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public JoinRequestPacket(ROM message)
             : base(message)
         {
+            if (message.Length < 23)
+            {
+                throw new ArgumentException("Invalid Join Request packet length");
+            }
             AppEui = message[1..9];
             DevEui = message[9..17];
             DevNonce = message[17..19];
@@ -153,9 +118,20 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public class JoinAcceptPacket : Packet
     {
-        public JoinAcceptPacket(ROM message)
+        public JoinAcceptPacket(AppKey appKey, ROM message)
             : base(message)
         {
+            if (message.Length < 17)
+            {
+                throw new ArgumentException("Invalid Join Response packet length");
+            }
+            var decryptedData = EncryptionTools.DecryptMessage(appKey.Value, message[1..]);
+            var d = new byte[1+ decryptedData.Length];
+            d[0] = message.Span[0];
+            decryptedData.CopyTo(d.AsSpan(1));
+            message = d;
+            Console.WriteLine($"Decrypted data: {d.ToHexString(false)}");
+
             AppNonce = message[1..4];
             NetworkId = message[4..7];
             var devAddress = new byte[4];
@@ -292,21 +268,21 @@ namespace Meadow.Foundation.Radio.LoRaWan
     public abstract class DataPacket : Packet
     {
         protected DataPacket(byte mhdr,
-                             ROM deviceAddress,
+                             DeviceAddress deviceAddress,
                              FrameControl frameCtrl,
-                             ROM fCnt,
+                             uint fCnt,
                              ROM fOpts,
                              byte fPort,
                              ROM payload,
-                             ROM? networkSKey,
-                             ROM? appSKey)
+                             AppSKey? appSKey,
+                             NetworkSKey? networkSKey)
         {
             if (fOpts.Length > 15)
             {
                 throw new ArgumentException("FOpts must be 15 bytes or less");
             }
             Mhdr = mhdr;
-            DeviceAddress = deviceAddress;
+            DeviceAddress = deviceAddress.Value;
 
             // Make sure the length of fOpts length is included in the FCtrl
             if (FOpts.Length != frameCtrl.FOptsLength)
@@ -314,16 +290,17 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 frameCtrl.FOptsLength = (byte)FOpts.Length;
             }
             FrameCtrl = frameCtrl;
-            FCnt = fCnt;
+            FCnt = BitConverter.GetBytes(fCnt)[..2].Reverse();
             FOpts = fOpts;
             FPort = fPort;
+            Payload = payload;
             FrmPayload = payload;
-            var fhdr = new byte[deviceAddress.Length + 1 /*fctrl length*/ + fCnt.Length + fOpts.Length];
-            deviceAddress.Span.CopyToReverse(fhdr);
+            var fhdr = new byte[deviceAddress.Value.Length + 1 /*fctrl length*/ + FCnt.Length + fOpts.Length];
+            deviceAddress.Value.CopyToReverse(fhdr);
             // TODO: FCtrl needs to be precisely created because it contains the fOpts length and other stuff
             fhdr[deviceAddress.Length] = FrameCtrl.Value;
-            fCnt.Span.CopyToReverse(fhdr.AsSpan(deviceAddress.Length + 1));
-            fOpts.Span.CopyTo(fhdr.AsSpan(deviceAddress.Length + 1 + fCnt.Length));
+            FCnt.Span.CopyToReverse(fhdr.AsSpan(deviceAddress.Length + 1));
+            fOpts.Span.CopyTo(fhdr.AsSpan(deviceAddress.Length + 1 + FCnt.Length));
             FHeader = fhdr;
             if (FPort == (byte)0x00)
             {
@@ -332,7 +309,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     throw new ArgumentNullException(nameof(networkSKey));
                 }
 
-                var encryptedMacPayload = EncryptionTools.EncryptMessage(networkSKey.Value.ToArray(), this);
+                var encryptedMacPayload = EncryptionTools.EncryptMessage(networkSKey.Value.Value, this);
                 FrmPayload = encryptedMacPayload;
             }
             else
@@ -341,7 +318,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 {
                     throw new ArgumentNullException(nameof(appSKey));
                 }
-                var encryptedMacPayload = EncryptionTools.EncryptMessage(appSKey.Value.ToArray(), this);
+                var encryptedMacPayload = EncryptionTools.EncryptMessage(appSKey.Value.Value, this);
                 FrmPayload = encryptedMacPayload;
             }
 
@@ -358,8 +335,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
             micIn[4] = 0x00;
             
             micIn[5] = this is UnconfirmedDataUpPacket or ConfirmedDataUpPacket ? (byte)0x00 : (byte)0x01;
-            deviceAddress.Span.CopyToReverse(micIn.AsSpan(6));
-            fCnt.Span.CopyToReverse(micIn.AsSpan(10));
+            deviceAddress.Value.CopyToReverse(micIn.AsSpan(6));
+            FCnt.Span.CopyToReverse(micIn.AsSpan(10));
             micIn[12] = 0x00;
             micIn[13] = 0x00;
             micIn[14]= 0x00;
@@ -367,7 +344,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             micIn[16] = mhdr;
             macPayload.CopyTo(micIn.AsSpan(17));
 
-            var mic = EncryptionTools.ComputeAesCMac(networkSKey.Value.Span, micIn)[..4];
+            var mic = EncryptionTools.ComputeAesCMac(networkSKey!.Value.Value, micIn)[..4];
             Mic = mic;
             var phyPayload = new byte[1 + macPayload.Length + mic.Length];
             phyPayload[0] = mhdr;
@@ -377,7 +354,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             MacPayloadWithMic = PhyPayload[1..];
         }
 
-        protected DataPacket(ROM message)
+        protected DataPacket(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
             : base(message)
         {
             Mhdr = message.Span[0];
@@ -402,6 +379,26 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 FPort = message[(8 + fOptsLength)..(9 + fOptsLength)].Span[0];
                 FrmPayload = message[(9 + fOptsLength)..^4];
             }
+
+            if (FPort == (byte)0x00)
+            {
+                if (networkSKey == null)
+                {
+                    throw new ArgumentNullException(nameof(networkSKey));
+                }
+
+                var encryptedMacPayload = EncryptionTools.EncryptMessage(networkSKey.Value.Value, this);
+                FrmPayload = encryptedMacPayload;
+            }
+            else
+            {
+                if (appSKey == null)
+                {
+                    throw new ArgumentNullException(nameof(appSKey));
+                }
+                var encryptedMacPayload = EncryptionTools.EncryptMessage(appSKey.Value.Value, this);
+                FrmPayload = encryptedMacPayload;
+            }
         }
 
         public ROM DeviceAddress { get; protected set; }
@@ -411,6 +408,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public ROM FHeader { get; protected set; }
         public byte FPort { get; protected set; }
         public ROM FrmPayload { get; protected set; }
+        public ROM Payload { get; protected set; }
 
         public override string ToString()
         {
@@ -445,19 +443,19 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public class UnconfirmedDataUpPacket : DataPacket
     {
-        public UnconfirmedDataUpPacket(ROM message)
-            : base(message)
+        public UnconfirmedDataUpPacket(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
+            : base(message, appSKey, networkSKey)
         {
         }
 
-        public UnconfirmedDataUpPacket(ROM deviceAddress,
+        public UnconfirmedDataUpPacket(DeviceAddress deviceAddress,
                                        FrameControl frameCtrl,
-                                       ROM fCnt,
+                                       uint fCnt,
                                        ROM fOpts,
                                        byte fPort,
                                        ROM payload,
-                                       ROM? networkSKey,
-                                       ROM? appSKey)
+                                       AppSKey? appSKey,
+                                       NetworkSKey? networkSKey)
             : base((byte)PacketType.UnconfirmedDataUp << 5,
                    deviceAddress,
                    frameCtrl,
@@ -465,15 +463,18 @@ namespace Meadow.Foundation.Radio.LoRaWan
                    fOpts,
                    fPort,
                    payload,
-                   networkSKey,
-                   appSKey)
+                   appSKey,
+                   networkSKey)
         {
         }
     }
 
-    public class UnconfirmedDataDownPacket(ROM message) : DataPacket(message);
+    public class UnconfirmedDataDownPacket(ROM message,AppSKey? appSKey,
+                                           NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);
 
-    public class ConfirmedDataUpPacket(ROM message) : DataPacket(message);
+    public class ConfirmedDataUpPacket(ROM message,AppSKey? appSKey,
+                                       NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);
 
-    public class ConfirmedDataDownPacket(ROM message) : DataPacket(message);
+    public class ConfirmedDataDownPacket(ROM message,AppSKey? appSKey,
+                                         NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);
 }

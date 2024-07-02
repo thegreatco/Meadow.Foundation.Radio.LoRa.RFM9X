@@ -1,17 +1,13 @@
 ﻿using System;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using Meadow.Foundation.Serialization;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    public record struct DeviceNonce
+    public record struct DeviceNonce(byte[] Value)
     {
-        public DeviceNonce(byte[] value)
-        {
-            Value = value;
-        }
-
         public static DeviceNonce GenerateNewNonce()
         {
             var random = new Random();
@@ -19,9 +15,18 @@ namespace Meadow.Foundation.Radio.LoRaWan
             random.NextBytes(nonce);
             return new DeviceNonce(nonce);
         }
-
-        public byte[] Value { get; set; }
     }
+
+    public record struct AppKey(byte[] Value);
+    public record struct AppNonce(byte[] Value);
+    public record struct NetworkId(byte[] Value);
+
+    public record struct DeviceAddress(byte[] Value)
+    {
+        public int Length => Value.Length;
+    }
+    public record struct NetworkSKey(byte[] Value);
+    public record struct AppSKey(byte[] Value);
 
     /// <summary>
     /// Contains the settings for Over The Air Activation (OTAA) for a LoRaWAN device.
@@ -29,96 +34,156 @@ namespace Meadow.Foundation.Radio.LoRaWan
     /// </summary>
     public class OtaaSettings
     {
-        private const string FileName = "/meadow0/Data/otaa_settings.json";
+        private const string FileName = "/meadow0/Data/otaa_settings.bin";
 
-        [Obsolete("For JSON only")]
-        public OtaaSettings() { }
-
-        public OtaaSettings(byte[] appKey,
-                            byte[] appNonce,
-                            byte[] networkId,
-                            byte[] deviceAddress,
-                            byte[] deviceNonce,
-                            uint frameCounter)
+        public OtaaSettings(ReadOnlyMemory<byte> bytes)
         {
-            AppKey = appKey;
-            AppNonce = appNonce;
-            NetworkId = networkId;
-            DeviceAddress = deviceAddress;
-            DeviceNonce = new DeviceNonce(deviceNonce);
-            FrameCounter = frameCounter;
-            NetworkSKey = GenerateNetworkSKey();
-            AppSKey = GenerateAppSKey();
+            AppKey = new AppKey(bytes[..16].ToArray());
+            AppNonce = new AppNonce(bytes[16..19].ToArray());
+            NetworkId = new NetworkId(bytes[19..21].ToArray());
+            DeviceNonce = new DeviceNonce(bytes[22..24]
+                                               .ToArray());
+            DeviceAddress = new DeviceAddress(bytes[24..28].ToArray());
+            UplinkFrameCounter = BitConverter.ToUInt16(bytes[28..30].ToArray());
+            DownlinkFrameCounter = BitConverter.ToUInt16(bytes[30..32].ToArray());
+            NetworkSKey = new NetworkSKey(bytes[32..48].ToArray());
+            AppSKey = new AppSKey(bytes[48..64].ToArray());
         }
 
-        public OtaaSettings(byte[] appKey,
-                            byte[] appNonce,
-                            byte[] networkId,
-                            byte[] deviceAddress,
-                            byte[] deviceNonce,
-                            uint frameCounter,
-                            byte[] networkSKey,
-                            byte[] appSKey)
+        public OtaaSettings(AppKey appKey,
+                            AppNonce appNonce,
+                            NetworkId networkId,
+                            DeviceAddress deviceAddress,
+                            DeviceNonce deviceNonce,
+                            ushort uplinkFrameCounter,
+                            ushort downlinkFrameCounter,
+                            NetworkSKey networkSKey,
+                            AppSKey appSKey)
         {
             AppKey = appKey;
             AppNonce = appNonce;
             NetworkId = networkId;
             DeviceAddress = deviceAddress;
-            DeviceNonce = new DeviceNonce(deviceNonce);
-            FrameCounter = frameCounter;
+            DeviceNonce = deviceNonce;
+            UplinkFrameCounter = uplinkFrameCounter;
+            DownlinkFrameCounter = downlinkFrameCounter;
             NetworkSKey = networkSKey;
             AppSKey = appSKey;
         }
 
-        public OtaaSettings(byte[] appKey, JoinAcceptPacket joinResponse, DeviceNonce deviceNonce)
+        public OtaaSettings(AppKey appKey, JoinAcceptPacket joinResponse, DeviceNonce deviceNonce)
         {
             AppKey = appKey;
-            AppNonce = joinResponse.AppNonce.ToArray();
-            NetworkId = joinResponse.NetworkId.ToArray();
-            DeviceAddress = joinResponse.DeviceAddress.ToArray();
-            Console.WriteLine($"Device Address: {DeviceAddress.ToHexString(false)}");
+            AppNonce = new AppNonce(joinResponse.AppNonce.ToArray());
+            NetworkId = new NetworkId(joinResponse.NetworkId.ToArray());
+            DeviceAddress = new DeviceAddress(joinResponse.DeviceAddress.ToArray());
+            Console.WriteLine($"Device Address: {DeviceAddress.Value.ToHexString(false)}");
             DeviceNonce = deviceNonce;
-            FrameCounter = 0;
+            UplinkFrameCounter = 0;
+            DownlinkFrameCounter = 0;
             NetworkSKey = GenerateNetworkSKey();
             AppSKey = GenerateAppSKey();
         }
 
-        public byte[] AppKey { get; set; }
-        public byte[] AppNonce { get; set; }
-        public byte[] NetworkId { get; set; }
+        public AppKey AppKey { get; set; }
+        public AppNonce AppNonce { get; set; }
+        public NetworkId NetworkId { get; set; }
         public DeviceNonce DeviceNonce { get; set; }
-        public byte[] DeviceAddress { get; set; }
-        public uint FrameCounter { get; set; }
-        public byte[] NetworkSKey { get; set; }
-        public byte[] AppSKey { get; set; }
+        public DeviceAddress DeviceAddress { get; set; }
+        public ushort UplinkFrameCounter { get; set; }
+        public ushort DownlinkFrameCounter { get; set; }
+        public NetworkSKey NetworkSKey { get; set; }
+        public AppSKey AppSKey { get; set; }
 
-        internal async ValueTask IncFrameCounter()
+        internal async ValueTask IncUplinkFrameCounter()
         {
-            FrameCounter++;
-            var json = MicroJson.Serialize(this);
-            await File.WriteAllTextAsync(FileName, json).ConfigureAwait(false);
+            UplinkFrameCounter++;
+            await using var s = File.Open(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            s.Seek(28, SeekOrigin.Begin);
+            await s.WriteAsync(BitConverter.GetBytes(UplinkFrameCounter)[..2]);
+            await s.FlushAsync();
         }
 
-        private byte[] GenerateNetworkSKey()
+        internal async ValueTask IncDownlinkFrameCounter()
+        {
+            DownlinkFrameCounter++;
+            await using var s = File.Open(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            s.Seek(30, SeekOrigin.Begin);
+            await s.WriteAsync(BitConverter.GetBytes(UplinkFrameCounter)[..2]);
+            await s.FlushAsync();
+        }
+
+        private NetworkSKey GenerateNetworkSKey()
         {
             var bytes = new byte[16];
             bytes[0] = 0x01;
-            Array.Copy(AppNonce, 0, bytes, 1, AppNonce.Length);
-            Array.Copy(NetworkId, 0, bytes, 1 + AppNonce.Length, NetworkId.Length);
-            Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Length + NetworkId.Length, DeviceNonce.Value.Length);
+            Array.Copy(AppNonce.Value, 0, bytes, 1, AppNonce.Value.Length);
+            Array.Copy(NetworkId.Value, 0, bytes, 1 + AppNonce.Value.Length, NetworkId.Value.Length);
+            Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Value.Length + NetworkId.Value.Length, DeviceNonce.Value.Length);
 
-            return EncryptionTools.EncryptMessage(AppKey, bytes);
+            return new NetworkSKey(EncryptionTools.EncryptMessage(AppKey.Value, bytes));
         }
 
-        private byte[] GenerateAppSKey()
+        private AppSKey GenerateAppSKey()
         {
             var bytes = new byte[16];
             bytes[0] = 0x02;
-            Array.Copy(AppNonce,    0, bytes, 1,                                      AppNonce.Length);
-            Array.Copy(NetworkId,   0, bytes, 1 + AppNonce.Length,                    NetworkId.Length);
-            Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Length + NetworkId.Length, DeviceNonce.Value.Length);
+            Array.Copy(AppNonce.Value,    0, bytes, 1,                                      AppNonce.Value.Length);
+            Array.Copy(NetworkId.Value,   0, bytes, 1 + AppNonce.Value.Length,              NetworkId.Value.Length);
+            Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Value.Length + NetworkId.Value.Length, DeviceNonce.Value.Length);
 
-            return EncryptionTools.EncryptMessage(AppKey, bytes);
+            return new AppSKey(EncryptionTools.EncryptMessage(AppKey.Value, bytes));
+        }
+
+        public byte[] ToBytes()
+        {
+            var bytes = new byte[64];
+            AppKey.Value.CopyTo(bytes, 0);
+            AppNonce.Value.CopyTo(bytes, 16);
+            NetworkId.Value.CopyTo(bytes, 19);
+            DeviceNonce.Value.CopyTo(bytes, 22);
+            DeviceAddress.Value.CopyTo(bytes, 24);
+            BitConverter.GetBytes(UplinkFrameCounter).CopyTo(bytes, 28);
+            BitConverter.GetBytes(DownlinkFrameCounter).CopyTo(bytes, 30);
+            NetworkSKey.Value.CopyTo(bytes, 32);
+            AppSKey.Value.CopyTo(bytes, 48);
+            return bytes;
+        }
+
+        public static async ValueTask<OtaaSettings?> LoadSettings()
+        {
+            if (!File.Exists(FileName))
+            {
+                Console.WriteLine("Settings file not found.");
+                return null;
+            }
+
+            await using var s = File.Open(FileName, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var bytes = new byte[64];
+            _ = await s.ReadAsync(bytes).ConfigureAwait(false);
+            return new OtaaSettings(bytes);
+        }
+
+        public async ValueTask SaveSettings()
+        {
+            await using var s = File.Open(FileName, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+            await s.WriteAsync(ToBytes());
+            await s.FlushAsync();
+        }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"AppKey:             {AppKey.Value.ToHexString(false)}");
+            sb.AppendLine($"AppNonce:           {AppNonce.Value.ToHexString(false)}");
+            sb.AppendLine($"NetworkId:          {NetworkId.Value.ToHexString(false)}");
+            sb.AppendLine($"DeviceNonce:        {DeviceNonce.Value.ToHexString(false)}");
+            sb.AppendLine($"DeviceAddress:      {DeviceAddress.Value.ToHexString(false)}");
+            sb.AppendLine($"UplinkFrameCount:   {UplinkFrameCounter}");
+            sb.AppendLine($"DownlinkFrameCount: {DownlinkFrameCounter}");
+            sb.AppendLine($"NetworkSKey:        {NetworkSKey.Value.ToHexString(false)}");
+            sb.AppendLine($"AppSKey:            {AppSKey.Value.ToHexString(false)}");
+            return sb.ToString();
         }
     }
 }

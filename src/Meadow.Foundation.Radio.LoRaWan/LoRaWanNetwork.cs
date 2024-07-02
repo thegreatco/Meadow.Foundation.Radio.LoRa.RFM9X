@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 using Meadow.Foundation.Serialization;
@@ -8,31 +7,18 @@ using Meadow.Logging;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    public abstract class LoRaWanNetwork(Logger logger, IPlatformOS os, ILoRaRadio radio, byte[] devEui, byte[] appKey, byte[]? appEui = null)
+    public abstract class LoRaWanNetwork(Logger logger, IPlatformOS os, ILoRaRadio radio, byte[] devEui, AppKey appKey, byte[]? appEui = null)
     {
         private static readonly byte[] DefaultAppEui = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         private readonly byte[] _appEui = appEui ?? DefaultAppEui;
-        public OtaaSettings? _settings;
+        public OtaaSettings? Settings;
 
         public async ValueTask Initialize()
         {
             await radio.Initialize().ConfigureAwait(false);
 
-#pragma warning disable CS0618 // Type or member is obsolete, stupid trimming
-            OtaaSettings settings = new OtaaSettings();
-#pragma warning restore CS0618 // Type or member is obsolete
-            var settingsFile = Path.Combine(os.FileSystem.DataDirectory, "otaa_settings.json");
-            logger.Debug($"Using settings file: {settingsFile}");
-            if (File.Exists(settingsFile))
-            {
-                logger.Debug("Loading settings from file");
-                await using var s = File.Open(settingsFile, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
-                using var sr = new StreamReader(s);
-                var b = await sr.ReadToEndAsync();
-                settings = MicroJson.Deserialize<OtaaSettings>(b);
-                logger.Debug("Successfully read settings from file");
-            }
-            else
+            var settings = await OtaaSettings.LoadSettings();
+            if (settings == null)
             {
             retry:
                 try
@@ -44,11 +30,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
                     logger.Debug("Device activated successfully");
                     settings = new OtaaSettings(appKey, joinResponse, devNonce);
-
-                    await using var s = File.Open(settingsFile, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
-                    await using var sw = new StreamWriter(s);
-                    await sw.WriteAsync(MicroJson.Serialize(settings))
-                            .ConfigureAwait(false);
+                    await settings.SaveSettings().ConfigureAwait(false);
                     logger.Debug("Wrote settings to file");
                 }
                 catch (TimeoutException tex)
@@ -58,8 +40,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     goto retry;
                 }
             }
-            Console.WriteLine($"Device Address: {settings.DeviceAddress.ToHexString(false)}");
-            _settings = settings;
+            Settings = settings;
+            Console.WriteLine(settings);
             // This is just an insanity check
             ThrowIfSettingsNull();
         }
@@ -67,33 +49,32 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public async ValueTask SendMessage(byte[] payload)
         {
             ThrowIfSettingsNull();
-            var dataPacket = new UnconfirmedDataUpPacket(_settings!.DeviceAddress,
+            var dataPacket = new UnconfirmedDataUpPacket(Settings!.DeviceAddress,
                                                      new UplinkFrameControl(false, false, false, false),
-                                                     BitConverter.GetBytes(_settings.FrameCounter),
+                                                     Settings.UplinkFrameCounter,
                                                      ReadOnlyMemory<byte>.Empty,
                                                      0x01,
                                                      payload,
-                                                     _settings.NetworkSKey,
-                                                     _settings.AppSKey);
+                                                     Settings.AppSKey,
+                                                     Settings.NetworkSKey);
             logger.Debug("Sending message");
             logger.Trace($"PHYPayload: {Convert.ToBase64String(dataPacket.PhyPayload.Span)}");
             await radio.Send(dataPacket.PhyPayload).ConfigureAwait(false);
-            await _settings!.IncFrameCounter().ConfigureAwait(false);
+            await Settings!.IncUplinkFrameCounter().ConfigureAwait(false);
             logger.Debug("Finished sending message");
         }
 
         private async ValueTask<JoinAcceptPacket> SendJoinRequest(DeviceNonce devNonce)
         {
             var request = new JoinRequestPacket(appKey, _appEui, devEui, devNonce.Value);
-            var message = request.PhyPayload;
-            var res = await radio.SendAndReceive(message, TimeSpan.FromMinutes(1));
-            logger.Debug(res.MessagePayload.ToHexString());
-            return (JoinAcceptPacket)Packet.DecodePacket(appKey, res.MessagePayload);
+            var res = await radio.SendAndReceive(request.PhyPayload, TimeSpan.FromMinutes(1));
+            logger.Debug(Convert.ToBase64String(res.MessagePayload));
+            return new JoinAcceptPacket(appKey, res.MessagePayload);
         }
 
         private void ThrowIfSettingsNull()
         {
-            if (_settings == null)
+            if (Settings == null)
                 throw new InvalidOperationException("Settings cannot be null");
         }
     }

@@ -10,6 +10,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
     /// <param name="devEui">the devEUI, in LSB format</param>
     /// <param name="appKey">the appKey, in MSB format</param>
     /// <param name="appEui">the appEUI, which i'm not sure if it does anything</param>
-    public class TheThingsNetwork(Logger logger, IPlatformOS os, ILoRaRadio radio, byte[] devEui, byte[] appKey, byte[]? appEui = null)
+    public class TheThingsNetwork(Logger logger, IPlatformOS os, ILoRaRadio radio, byte[] devEui, AppKey appKey, byte[]? appEui = null)
         : LoRaWanNetwork(logger, os, radio, devEui, appKey, appEui);
 }
