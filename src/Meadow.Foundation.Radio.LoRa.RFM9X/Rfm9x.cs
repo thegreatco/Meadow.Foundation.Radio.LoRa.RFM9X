@@ -170,7 +170,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             ArrayPool<byte>.Shared.Return(payload);
         }
 
-        public async ValueTask Send(byte[] payload)
+        public async ValueTask Send(ReadOnlyMemory<byte> payload)
         {
             await SendInternal(payload);
             SetMode(RegOpMode.OpMode.StandBy);

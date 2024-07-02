@@ -6,7 +6,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
     public interface ILoRaRadio
     {
         public ValueTask Initialize();
-        public ValueTask Send(byte[] messagePayload);
+        public ValueTask Send(ReadOnlyMemory<byte> messagePayload);
         public ValueTask<Envelope> SendAndReceive(ReadOnlyMemory<byte> messagePayload, TimeSpan timeout);
         public ValueTask<Envelope> Receive(TimeSpan timeout);
     }

@@ -1,3 +1,5 @@
+using Meadow.Logging;
+
 namespace Meadow.Foundation.Radio.LoRaWan.Test
 {
     public class PacketTests
@@ -31,10 +33,20 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
                                                      Convert.FromHexString("0003"),
                                                      ReadOnlyMemory<byte>.Empty,
                                                      0x01,
-                                                     "test"u8.ToArray(),
+                                                     "Hello!"u8.ToArray(),
                                                      Convert.FromHexString("44024241ed4ce9a68c6a8bc055233fd3"),
                                                      Convert.FromHexString("ec925802ae430ca77fd3dd73cb2cc588"));
-            Assert.That(packet.MacPayload.ToHexString(), Is.EqualTo("040302012003000198A92F3B"));
+            Console.WriteLine(packet);
+            Assert.That(packet.PhyPayload.ToHexString(), Is.EqualTo("400403020120030001A4A93023B19A5C5F0828"));
+        }
+
+        //YO+W/SeAAAAAql/24u9PtVHxm9zCW1Y6AFTv7aOWCf+y37ic27ja
+        [Test]
+        public void TestUnconfirmedDownlinkPacket()
+        {
+            byte[] appKey = [0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67];
+            var packet = Packet.DecodePacket(appKey, Convert.FromBase64String("YO+W/SeAAAAAql/24u9PtVHxm9zCW1Y6AFTv7aOWCf+y37ic27ja"));
+            Console.WriteLine(packet);
         }
     }
 }

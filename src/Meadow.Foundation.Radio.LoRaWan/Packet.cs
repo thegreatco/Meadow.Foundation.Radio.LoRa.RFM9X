@@ -45,6 +45,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     var d = new byte[1+ decryptedData.Length];
                     d[0] = data.Span[0];
                     decryptedData.CopyTo(d.AsSpan(1));
+                    Console.WriteLine($"Decrypted data: {d.ToHexString(false)}");
                     return new JoinAcceptPacket(d);
                 case PacketType.RejoinRequest:
                     throw new NotImplementedException("rejoin packets are not implemented");
@@ -104,6 +105,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             MacPayload = macPayload;
 
             // Calculate the message integrity check
+            Console.WriteLine("Calculating MIC");
             var mic = CalculateMic(appKey);
             Mic = mic;
 
@@ -114,6 +116,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             MacPayloadWithMic = macPayloadWithMic;
 
             // Set the physical payload
+            Console.WriteLine("Setting PHYPayload to MACPayloadWithMIC");
             PhyPayload = MacPayloadWithMic;
         }
 
@@ -148,14 +151,28 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
-    public class JoinAcceptPacket(ROM message) : Packet(message)
+    public class JoinAcceptPacket : Packet
     {
-        public ROM AppNonce { get; set; } = message[1..4];
-        public ROM NetworkId { get; set; } = message[4..7];
-        public ROM DeviceAddress { get; set; } = message[7..11];
-        public ROM DownlinkSettings { get; set; } = message[11..12];
-        public ROM ReceiveDelay { get; set; } = message[12..13];
-        public ROM CfList { get; set; } = message.Length == 13 + 16 ? message[13..] : ROM.Empty;
+        public JoinAcceptPacket(ROM message)
+            : base(message)
+        {
+            AppNonce = message[1..4];
+            NetworkId = message[4..7];
+            var devAddress = new byte[4];
+            message[7..11].Span.CopyToReverse(devAddress);
+            Console.WriteLine($"Device Address in JoinAccept: {devAddress.ToHexString(false)}");
+            DeviceAddress = devAddress;
+            DownlinkSettings = message[11..12];
+            ReceiveDelay = message[12..13];
+            CfList = message.Length == 13 + 16 ? message[13..] : ROM.Empty;
+        }
+
+        public ROM AppNonce { get; set; }
+        public ROM NetworkId { get; set; }
+        public ROM DeviceAddress { get; set; }
+        public ROM DownlinkSettings { get; set; }
+        public ROM ReceiveDelay { get; set; }
+        public ROM CfList { get; set; }
 
         // TODO: Remove?
         public byte[]? JoinReqType { get; set; }
@@ -225,6 +242,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
         public abstract byte Value { get; }
     }
+
     public record UplinkFrameControl(bool Adr,
                                      bool AdrAckReq,
                                      bool Ack,
@@ -247,6 +265,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                                              (Rfu         ? 0b00010000 : 0) |
                                              (FOptsLength & 0x0F));
     }
+
     public record DownlinkFrameControl(bool Adr,
                                        bool Rfu,
                                        bool Ack,
@@ -361,8 +380,12 @@ namespace Meadow.Foundation.Radio.LoRaWan
         protected DataPacket(ROM message)
             : base(message)
         {
+            Mhdr = message.Span[0];
+            var packetType = (PacketType)((Mhdr >> 5) & 0x07);
             DeviceAddress = message[1..5];
-            //FrameCtrl = new FrameControl(message[5..6].Span[0]);
+            FrameCtrl = packetType is PacketType.ConfirmedDataUp or PacketType.UnconfirmedDataUp
+                            ? new UplinkFrameControl(message[5..6].Span[0])
+                            : new DownlinkFrameControl(message[5..6].Span[0]);
             FCnt = message[6..8];
             var fOptsLength = (message[5..6].Span[0] & 0x0f);
             FOpts = message[8..(8 + fOptsLength)];

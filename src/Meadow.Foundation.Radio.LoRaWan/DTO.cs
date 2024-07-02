@@ -5,8 +5,13 @@ using Meadow.Foundation.Serialization;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    public record struct DeviceNonce(byte[] Value)
+    public record struct DeviceNonce
     {
+        public DeviceNonce(byte[] value)
+        {
+            Value = value;
+        }
+
         public static DeviceNonce GenerateNewNonce()
         {
             var random = new Random();
@@ -14,6 +19,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
             random.NextBytes(nonce);
             return new DeviceNonce(nonce);
         }
+
+        public byte[] Value { get; set; }
     }
 
     /// <summary>
@@ -22,10 +29,10 @@ namespace Meadow.Foundation.Radio.LoRaWan
     /// </summary>
     public class OtaaSettings
     {
-        private const string FileName = "Data/OtaaSettings.json";
+        private const string FileName = "/meadow0/Data/otaa_settings.json";
 
         [Obsolete("For JSON only")]
-        public OtaaSettings(){}
+        public OtaaSettings() { }
 
         public OtaaSettings(byte[] appKey,
                             byte[] appNonce,
@@ -44,12 +51,32 @@ namespace Meadow.Foundation.Radio.LoRaWan
             AppSKey = GenerateAppSKey();
         }
 
+        public OtaaSettings(byte[] appKey,
+                            byte[] appNonce,
+                            byte[] networkId,
+                            byte[] deviceAddress,
+                            byte[] deviceNonce,
+                            uint frameCounter,
+                            byte[] networkSKey,
+                            byte[] appSKey)
+        {
+            AppKey = appKey;
+            AppNonce = appNonce;
+            NetworkId = networkId;
+            DeviceAddress = deviceAddress;
+            DeviceNonce = new DeviceNonce(deviceNonce);
+            FrameCounter = frameCounter;
+            NetworkSKey = networkSKey;
+            AppSKey = appSKey;
+        }
+
         public OtaaSettings(byte[] appKey, JoinAcceptPacket joinResponse, DeviceNonce deviceNonce)
         {
             AppKey = appKey;
             AppNonce = joinResponse.AppNonce.ToArray();
             NetworkId = joinResponse.NetworkId.ToArray();
             DeviceAddress = joinResponse.DeviceAddress.ToArray();
+            Console.WriteLine($"Device Address: {DeviceAddress.ToHexString(false)}");
             DeviceNonce = deviceNonce;
             FrameCounter = 0;
             NetworkSKey = GenerateNetworkSKey();
@@ -61,11 +88,11 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public byte[] NetworkId { get; set; }
         public DeviceNonce DeviceNonce { get; set; }
         public byte[] DeviceAddress { get; set; }
-        public uint FrameCounter { get; private set; }
+        public uint FrameCounter { get; set; }
         public byte[] NetworkSKey { get; set; }
         public byte[] AppSKey { get; set; }
 
-        public async ValueTask IncFrameCounter()
+        internal async ValueTask IncFrameCounter()
         {
             FrameCounter++;
             var json = MicroJson.Serialize(this);

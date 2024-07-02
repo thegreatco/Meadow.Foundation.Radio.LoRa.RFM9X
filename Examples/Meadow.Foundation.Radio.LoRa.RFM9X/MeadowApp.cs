@@ -1,5 +1,4 @@
-﻿using System.Text;
-using Meadow.Devices;
+﻿using Meadow.Devices;
 using System.Threading.Tasks;
 using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Units;
