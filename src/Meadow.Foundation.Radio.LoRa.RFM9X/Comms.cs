@@ -29,7 +29,6 @@ namespace Meadow.Foundation.Radio.Sx127X
 
         private void WriteRegister(byte register, ReadOnlySpan<byte> bytes)
         {
-            _logger.Debug($"Writing to register {register.ToHexString()} with {bytes.ToHexString()}");
 #if CUSTOM_SPI
             Span<byte> writeBuffer = new byte[bytes.Length + 1];
             writeBuffer[0] = (byte)(0x80 | register);
@@ -44,7 +43,6 @@ namespace Meadow.Foundation.Radio.Sx127X
 
         private void WriteRegister(byte register, byte[] bytes)
         {
-            _logger.Debug($"Writing to register {register.ToHexString()} with {bytes.ToHexString()}");
 #if CUSTOM_SPI
             Span<byte> writeBuffer = new byte[bytes.Length + 1];
             writeBuffer[0] = (byte)(0x80 | register);
@@ -59,7 +57,6 @@ namespace Meadow.Foundation.Radio.Sx127X
 
         private byte ReadRegister(Register register)
         {
-            _logger.Debug($"Reading register {register}");
 #if CUSTOM_SPI
             var command = 0x7F & (byte)register;
             var writeBuffer = new byte[] { (byte)command, 0x00 };
@@ -77,7 +74,6 @@ namespace Meadow.Foundation.Radio.Sx127X
 
         private byte[] ReadRegister(Register register, int length)
         {
-            _logger.Debug($"Reading register {register}");
 #if CUSTOM_SPI
             var command = 0x7F & (byte)register;
             var writeBuffer = new byte[length + 1];
@@ -93,7 +89,6 @@ namespace Meadow.Foundation.Radio.Sx127X
 
         private void ReadRegister(Register register, byte[] buffer)
         {
-            _logger.Debug($"Reading register {register}");
 #if CUSTOM_SPI
             var command = 0x7F & (byte)register;
             var writeBuffer = new byte[buffer.Length];
@@ -119,7 +114,7 @@ namespace Meadow.Foundation.Radio.Sx127X
                                 125   => Bandwidth.Bw125kHz,
                                 250   => Bandwidth.Bw250kHz,
                                 500   => Bandwidth.Bw500kHz,
-                                _     => throw new ArgumentOutOfRangeException(nameof(bandwidth), "Invalid bandwidth")
+                                _     => throw new ArgumentOutOfRangeException(nameof(bandwidth), $"Invalid bandwidth {bandwidth.Kilohertz}")
                             };
             var value = (byte)bw;
             value |= (byte)codingRate;
@@ -150,6 +145,36 @@ namespace Meadow.Foundation.Radio.Sx127X
             value &= 0b11110011;
             value |= 0b00000100;
             WriteRegister(Register.ModemConfig3, value);
+        }
+
+        private void SetFrequency(Frequency frequency)
+        {
+            _logger.Trace($"Setting frequency to {frequency.Hertz}");
+            var registerFrequency = Convert.ToInt64(((uint)frequency.Hertz) / (32000000.0 / 524288.0));
+            var bytes = BitConverter.GetBytes(registerFrequency);
+            WriteRegister(Register.FrfMsb, bytes[2]);
+            WriteRegister(Register.FrfMid, bytes[1]);
+            WriteRegister(Register.FrfLsb, bytes[0]);
+        }
+
+        private Frequency GetFrequency()
+        {
+            var msb = ReadRegister(Register.FrfMsb);
+            var mid = ReadRegister(Register.FrfMid);
+            var lsb = ReadRegister(Register.FrfLsb);
+            var frequency = ((msb << 16) | (mid << 8) | lsb) * (32000000.0 / 524288.0);
+            return new Frequency(frequency);
+        }
+
+        public void SetMode(RegOpMode.OpMode opMode)
+        {
+            var mode = new RegOpMode()
+                       {
+                           LongRangeMode = true,
+                           LowFrequencyModeOn = _frequency.Hertz < RfMidBandThreshold,
+                           Mode = opMode
+                       };
+            WriteRegister(Register.OpMode, mode);
         }
     }
 }

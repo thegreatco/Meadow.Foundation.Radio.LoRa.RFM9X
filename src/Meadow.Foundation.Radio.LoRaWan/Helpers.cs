@@ -108,11 +108,36 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public static class Helpers
     {
+        public static string ToBase64(this byte[] bytes)
+        {
+            return Convert.ToBase64String(bytes);
+        }
+
+        public static string ToBase64(this Span<byte> bytes)
+        {
+            return Convert.ToBase64String(bytes);
+        }
+
+        public static string ToBase64(this ReadOnlySpan<byte> bytes)
+        {
+            return Convert.ToBase64String(bytes);
+        }
+
+        public static string ToBase64(this Memory<byte> bytes)
+        {
+            return Convert.ToBase64String(bytes.Span);
+        }
+
+        public static string ToBase64(this ReadOnlyMemory<byte> bytes)
+        {
+            return Convert.ToBase64String(bytes.Span);
+        }
+
         public static string ToHexString(this byte[] bytes, bool prefix = true)
         {
             return prefix
                        ? $"0x{BitConverter.ToString(bytes).Replace("-", ", 0x")}"
-                       : $"{BitConverter.ToString(bytes).Replace("-",   "")}";
+                       : $"{BitConverter.ToString(bytes).Replace("-", "")}";
         }
 
         public static string ToHexString(this byte @byte, bool prefix = true)
@@ -131,7 +156,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 return string.Empty;
             var chars = new char[span.Length * 2 + (prefix ? 3 : 0)];
             var offset = 0;
-            foreach(var b in span)
+            foreach (var b in span)
             {
                 var hex = b.ToString("X2");
                 chars[offset] = hex[0];
@@ -140,7 +165,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 {
                     chars[offset + 2] = ',';
                     chars[offset + 3] = ' ';
-                    offset+=4;
+                    offset += 4;
                 }
                 else
                 {
@@ -162,7 +187,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 return string.Empty;
             var chars = new char[span.Length * 2 + (prefix ? 3 : 0)];
             var offset = 0;
-            foreach(var b in span)
+            foreach (var b in span)
             {
                 var hex = b.ToString("X2");
                 chars[offset] = hex[0];
@@ -171,7 +196,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 {
                     chars[offset + 2] = ',';
                     chars[offset + 3] = ' ';
-                    offset+=4;
+                    offset += 4;
                 }
                 else
                 {
@@ -186,7 +211,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             if (dest.Length < src.Length)
                 throw new ArgumentException("Destination array is too small");
-            for(var i = 0; i < src.Length; i++)
+            for (var i = 0; i < src.Length; i++)
             {
                 dest[i] = src[src.Length - i - 1];
             }
@@ -196,7 +221,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             if (dest.Length < src.Length)
                 throw new ArgumentException("Destination array is too small");
-            for(var i = 0; i < src.Length; i++)
+            for (var i = 0; i < src.Length; i++)
             {
                 dest[i] = src[src.Length - i - 1];
             }
@@ -206,7 +231,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             if (dest.Length < src.Length)
                 throw new ArgumentException("Destination array is too small");
-            for(var i = 0; i < src.Length; i++)
+            for (var i = 0; i < src.Length; i++)
             {
                 dest[i] = src[src.Length - i - 1];
             }
@@ -216,7 +241,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             if (dest.Length < src.Length)
                 throw new ArgumentException("Destination array is too small");
-            for(var i = 0; i < src.Length; i++)
+            for (var i = 0; i < src.Length; i++)
             {
                 dest[i] = src[src.Length - i - 1];
             }
@@ -226,7 +251,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             if (destOffset + dest.Length < src.Length)
                 throw new ArgumentException("Destination array is too small");
-            for(var i = 0; i < src.Length; i++)
+            for (var i = 0; i < src.Length; i++)
             {
                 dest[destOffset + i] = src[src.Length - i - 1];
             }
@@ -235,7 +260,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public static T[] Reverse<T>(this T[] array)
         {
             var newArray = new T[array.Length];
-            for(var i = 0; i < array.Length; i++)
+            for (var i = 0; i < array.Length; i++)
             {
                 newArray[i] = array[array.Length - i - 1];
             }
@@ -246,7 +271,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public static T[] Reverse<T>(this Span<T> array)
         {
             var newArray = new T[array.Length];
-            for(var i = 0; i < array.Length; i++)
+            for (var i = 0; i < array.Length; i++)
             {
                 newArray[i] = array[array.Length - i - 1];
             }
@@ -257,7 +282,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public static T[] Reverse<T>(this ReadOnlySpan<T> array)
         {
             var newArray = new T[array.Length];
-            for(var i = 0; i < array.Length; i++)
+            for (var i = 0; i < array.Length; i++)
             {
                 newArray[i] = array[array.Length - i - 1];
             }

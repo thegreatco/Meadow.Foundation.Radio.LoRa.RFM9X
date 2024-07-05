@@ -1,5 +1,7 @@
 ﻿using Meadow.Units;
 
+using System.Text;
+
 namespace Meadow.Foundation.Radio.LoRa
 {
     public record struct LoRaParameters(
@@ -10,7 +12,22 @@ namespace Meadow.Foundation.Radio.LoRa
         bool ImplicitHeaderMode,
         bool CrcMode,
         bool InvertIq,
-        byte SyncWord = 0x34);
+        byte SyncWord = 0x34)
+    {
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Frequency          {Frequency}");
+            sb.AppendLine($"Bandwidth          {Bandwidth}");
+            sb.AppendLine($"CodingRate         {CodingRate}");
+            sb.AppendLine($"SpreadingFactor    {SpreadingFactor}");
+            sb.AppendLine($"ImplicitHeaderMode {ImplicitHeaderMode}");
+            sb.AppendLine($"CrcMode            {CrcMode}");
+            sb.AppendLine($"InvertIq           {InvertIq}");
+            sb.AppendLine($"SyncWord           {SyncWord:X2}");
+            return sb.ToString();
+        }
+    }
 
     public enum SpreadingFactor
     {

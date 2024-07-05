@@ -2,20 +2,22 @@
 using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Meadow.Foundation.Radio.LoRa;
 using Meadow.Foundation.Radio.LoRa.RFM9X;
 using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Hardware;
 using Meadow.Logging;
 using Meadow.Units;
+
 using static Meadow.Foundation.Radio.LoRa.RFM9X.LoRaRegisters;
+
+using SpreadingFactor = Meadow.Foundation.Radio.LoRa.SpreadingFactor;
 
 namespace Meadow.Foundation.Radio.Sx127X
 {
     public partial class Sx127X : LoRaRadio
     {
-        public class OnDataTransmittedEventArgs : EventArgs;
-
         private const int AddressHeaderLength = 1;
         private const double RfMidBandThreshold = 525000000.0;
         private readonly Logger _logger;
@@ -38,17 +40,24 @@ namespace Meadow.Foundation.Radio.Sx127X
 #if !CUSTOM_SPI
         private readonly ISpiCommunications _comms;
 #endif
-        private readonly Rfm9XConfiguration _config;
-        private readonly LoRaFrequencyManager _frequencyManager;
+        private readonly Sx172XConfiguration _config;
 
         private readonly Frequency _lowFrequencyMax = new(525, Frequency.UnitType.Megahertz);
         private const int RssiHighFrequencyAdjust = -157;
         private const int RssiLowFrequencyAdjust = -164;
 
-        public byte[] DeviceAddress { get; }
+        #region LoRa Settings
+        private Frequency _frequency;
+        private Frequency _bandwidth;
+        private ErrorCodingRate _errorCodingRate;
+        private LoRaRegisters.SpreadingFactor _spreadingFactor;
+        private ImplicitHeaderMode _implicitHeaderMode;
+        private PayloadCrcMode _payloadCrcMode;
+        private byte _syncWord;
+        private bool _invertIq;
+        #endregion
 
-        public Sx127X(Logger logger,
-                     Rfm9XConfiguration config)
+        public Sx127X(Logger logger, Sx172XConfiguration config)
         {
             _logger = logger;
 #if !CUSTOM_SPI
@@ -93,8 +102,6 @@ namespace Meadow.Foundation.Radio.Sx127X
             #endregion
 
             _config = config;
-            DeviceAddress = config.DeviceAddress;
-            _frequencyManager = new LoRaFrequencyManager(config.Channels);
             OnTransmitted += (sender, args) => _transmitCompleteTask?.SetResult(true);
             OnReceived += (sender, args) => _receiveCompleteTask?.SetResult(args.Envelope);
         }
@@ -114,24 +121,6 @@ namespace Meadow.Foundation.Radio.Sx127X
             _logger.Debug("Initialization complete");
         }
 
-        private void SetFrequency(Frequency frequency)
-        {
-            var registerFrequency = Convert.ToInt64(((uint)frequency.Hertz) / (32000000.0 / 524288.0));
-            var bytes = BitConverter.GetBytes(registerFrequency);
-            WriteRegister(Register.FrfMsb, bytes[2]);
-            WriteRegister(Register.FrfMid, bytes[1]);
-            WriteRegister(Register.FrfLsb, bytes[0]);
-        }
-
-        private Frequency GetFrequency()
-        {
-            var msb = ReadRegister(Register.FrfMsb);
-            var mid = ReadRegister(Register.FrfMid);
-            var lsb = ReadRegister(Register.FrfLsb);
-            var frequency = ((msb << 16) | (mid << 8) | lsb) * (32000000.0 / 524288.0);
-            return new Frequency(frequency);
-        }
-
         internal async ValueTask ResetChip()
         {
             _logger.Trace("Resetting chip");
@@ -142,51 +131,113 @@ namespace Meadow.Foundation.Radio.Sx127X
             _logger.Trace("Reset complete");
         }
 
-        public override async ValueTask Send(ReadOnlyMemory<byte> payload)
-        {
-            await SendInternal(payload);
-            SetMode(RegOpMode.OpMode.StandBy);
-        }
-
         public override ValueTask SetLoRaParameters(LoRaParameters parameters)
         {
-            throw new NotImplementedException();
+            _logger.Debug("Setting LoRa Parameters");
+            _logger.Trace(parameters.ToString());
+            _frequency = parameters.Frequency;
+            _bandwidth = parameters.Bandwidth;
+            _errorCodingRate = parameters.CodingRate switch
+            {
+                CodingRate.Cr45 => ErrorCodingRate.ECR4_5,
+                CodingRate.Cr46 => ErrorCodingRate.ECR4_6,
+                CodingRate.Cr47 => ErrorCodingRate.ECR4_7,
+                CodingRate.Cr48 => ErrorCodingRate.ECR4_8,
+                _ => throw new ArgumentOutOfRangeException()
+            };
+
+            _spreadingFactor = parameters.SpreadingFactor switch
+            {
+                SpreadingFactor.Sf6 => LoRaRegisters.SpreadingFactor.SF6,
+                SpreadingFactor.Sf7 => LoRaRegisters.SpreadingFactor.SF7,
+                SpreadingFactor.Sf8 => LoRaRegisters.SpreadingFactor.SF8,
+                SpreadingFactor.Sf9 => LoRaRegisters.SpreadingFactor.SF9,
+                SpreadingFactor.Sf10 => LoRaRegisters.SpreadingFactor.SF10,
+                SpreadingFactor.Sf11 => LoRaRegisters.SpreadingFactor.SF11,
+                SpreadingFactor.Sf12 => LoRaRegisters.SpreadingFactor.SF12,
+                _ => throw new ArgumentOutOfRangeException()
+            };
+
+            _implicitHeaderMode = parameters.ImplicitHeaderMode ? ImplicitHeaderMode.On : ImplicitHeaderMode.Off;
+            _payloadCrcMode = parameters.CrcMode ? PayloadCrcMode.On : PayloadCrcMode.Off;
+            _syncWord = parameters.SyncWord;
+            _invertIq = parameters.InvertIq;
+            return new ValueTask();
+        }
+
+        public override async ValueTask Send(ReadOnlyMemory<byte> payload)
+        {
+            _logger.Debug($"{DateTime.UtcNow} Sending message of {payload.Length}bytes");
+            _logger.Trace(payload.ToBase64());
+            byte currentMode;
+            do
+            {
+                _transmitCompleteTask = new TaskCompletionSource<bool>();
+                // Wake up the modem so we can fill the FIFO
+                SetMode(RegOpMode.OpMode.StandBy);
+
+                await Task.Delay(10).ConfigureAwait(false);
+
+                currentMode = ReadRegister(Register.OpMode);
+                _logger.Debug($"Current Mode: {currentMode.ToHexString()}");
+            } while ((currentMode & 0b00000111) != 0b00000001);
+
+            await _fifoSemaphore.WaitAsync()
+                                .ConfigureAwait(false);
+
+            try
+            {
+                // Set the transmit frequency
+                SetFrequency(_frequency);
+                WriteModemConfig1(_bandwidth, _errorCodingRate, _implicitHeaderMode);
+                // The CRC mode should be on, but I'm having trouble with my gateway
+                WriteModemConfig2(_spreadingFactor, _payloadCrcMode);
+                WriteModemConfig3();
+                WriteRegister(Register.SyncWord, 0x34);
+                WriteRegister(Register.FifoTransmitBaseAddress, 0x00);
+                WriteRegister(Register.FifoAddressPointer, 0x00);
+                WriteRegister(Register.PayloadLength, (byte)payload.Length);
+                WriteRegister(Register.Fifo, payload);
+                WriteRegister(Register.DioMapping1, (byte)DioMapping1.Dio0TxDone);
+
+                // Now actually transmit
+                SetMode(RegOpMode.OpMode.Transmit);
+                // Now wait for the transmit task to complete
+                await _transmitCompleteTask.Task;
+                _transmitCompleteTask = null;
+            }
+            finally
+            {
+                SetMode(RegOpMode.OpMode.StandBy);
+                _fifoSemaphore.Release();
+            }
         }
 
         public override async ValueTask<Envelope> Receive(TimeSpan timeout)
         {
+            using var cts = new CancellationTokenSource();
+            cts.CancelAfter(timeout);
             await _opSemaphore.WaitAsync();
             try
             {
                 // Create the TCS before we send a message to make sure we hear back properly.
                 // This is probably a bad setup...
                 _receiveCompleteTask = new TaskCompletionSource<Envelope>();
-                return await ReceiveInternal(timeout);
-            }
-            finally
-            {
-                _opSemaphore.Release();
-            }
-        }
-
-        private async ValueTask<Envelope> ReceiveInternal(TimeSpan timeout)
-        {
-            try
-            {
+                cts.Token.Register(() => _receiveCompleteTask.SetException(new TimeoutException("Receive timed out")));
                 _logger.Debug($"{DateTime.UtcNow} Waiting for message");
                 // Make sure the modem is awake
                 SetMode(RegOpMode.OpMode.StandBy);
 
                 // Set the downlink frequency
-                SetFrequency(_frequencyManager.DownlinkBaseFrequency);
+                SetFrequency(_frequency);
                 // Make sure the bandwidth, error coding rate, and header mode are right
-                WriteModemConfig1(_frequencyManager.DownlinkBandwidth, ErrorCodingRate.ECR4_5, ImplicitHeaderMode.Off);
-                WriteModemConfig2(LoRaRegisters.SpreadingFactor.SF7, PayloadCrcMode.Off);
+                WriteModemConfig1(_bandwidth, _errorCodingRate, _implicitHeaderMode);
+                WriteModemConfig2(_spreadingFactor, _payloadCrcMode);
                 WriteModemConfig3();
                 // Maybe we need to set gain to 0x20|0x3?
                 //WriteRegister(Register.MaxPayloadLength, 255);
                 var detectOptimize = ReadRegister(Register.DetectOptimize) & 0x78 | 0x03;
-                if (_frequencyManager.DownlinkBandwidth < LoRaChannels.Bandwidth500kHz)
+                if (_bandwidth < LoRaChannels.Bandwidth500kHz)
                 {
                     WriteRegister(Register.DetectOptimize, (byte)detectOptimize);
                     WriteRegister(Register.IfFreq1, 0x40);
@@ -197,7 +248,10 @@ namespace Meadow.Foundation.Radio.Sx127X
                     WriteRegister(Register.DetectOptimize, (byte)(detectOptimize | 0x80));
                 }
                 //WriteRegister(Register.ReceiveTimeoutLsb, );
-                WriteRegister(Register.InvertIq, (byte)(ReadRegister(Register.InvertIq) | (1 << 6)));
+                if (_invertIq)
+                    WriteRegister(Register.InvertIq, (byte)(ReadRegister(Register.InvertIq) | (1 << 6)));
+                else
+                    WriteRegister(Register.InvertIq, (byte)(ReadRegister(Register.InvertIq) & ~(1 << 6)));
                 WriteRegister(Register.SyncWord, 0x34);
                 WriteRegister(Register.FifoAddressPointer, 0x00);
                 WriteRegister(Register.FifoRxByteAddress, 0x00);
@@ -216,69 +270,10 @@ namespace Meadow.Foundation.Radio.Sx127X
             }
             finally
             {
+                SetMode(RegOpMode.OpMode.Sleep);
                 _receiveCompleteTask = null;
+                _opSemaphore.Release();
             }
-        }
-
-        private async ValueTask SendInternal(ReadOnlyMemory<byte> payload)
-        {
-            _logger.Debug($"{DateTime.UtcNow} Sending message of {payload.Length}bytes");
-            byte currentMode;
-            do
-            {
-                _transmitCompleteTask = new TaskCompletionSource<bool>();
-                // Wake up the modem so we can fill the FIFO
-                SetMode(RegOpMode.OpMode.StandBy);
-
-                // Set the transmit frequency
-                var frequency = _frequencyManager.GetNextUplinkFrequency();
-                _logger.Debug($"Setting frequency to {frequency.Megahertz}MHz");
-                SetFrequency(frequency);
-
-                await Task.Delay(10)
-                          .ConfigureAwait(false);
-
-                currentMode = ReadRegister(Register.OpMode);
-                _logger.Debug($"Current Mode: {currentMode.ToHexString()}");
-            } while (currentMode != 0x81);
-
-            await _fifoSemaphore.WaitAsync()
-                                .ConfigureAwait(false);
-
-            try
-            {
-                WriteModemConfig1(_frequencyManager.UplinkBandwidth, ErrorCodingRate.ECR4_5, ImplicitHeaderMode.Off);
-                // The CRC mode should be on, but I'm having trouble with my gateway
-                WriteModemConfig2(LoRaRegisters.SpreadingFactor.SF7, PayloadCrcMode.On);
-                WriteModemConfig3();
-                WriteRegister(Register.SyncWord, 0x34);
-                WriteRegister(Register.FifoTransmitBaseAddress, 0x00);
-                WriteRegister(Register.FifoAddressPointer, 0x00);
-                WriteRegister(Register.PayloadLength, (byte)payload.Length);
-                WriteRegister(Register.Fifo, payload);
-                WriteRegister(Register.DioMapping1, (byte)DioMapping1.Dio0TxDone);
-
-                // Now actually transmit
-                SetMode(RegOpMode.OpMode.Transmit);
-                // Now wait for the transmit task to complete
-                await _transmitCompleteTask.Task;
-                _transmitCompleteTask = null;
-            }
-            finally
-            {
-                _fifoSemaphore.Release();
-            }
-        }
-
-        public void SetMode(RegOpMode.OpMode opMode)
-        {
-            var mode = new RegOpMode()
-            {
-                LongRangeMode = true,
-                LowFrequencyModeOn = _frequencyManager.UplinkBaseFrequency.Hertz < RfMidBandThreshold,
-                Mode = opMode
-            };
-            WriteRegister(Register.OpMode, mode);
         }
 
         private void TransceiverInterrupt(object sender, DigitalPortResult e)
@@ -366,7 +361,7 @@ namespace Meadow.Foundation.Radio.Sx127X
                 if (PayloadHasMinimumLength(payload) == false)
                     return;
 
-                
+
                 // I'm pretty sure we have to ignore the first byte here
                 var envelope = new Envelope(payload);
                 OnReceivedHandler(new RadioDataReceived(envelope));

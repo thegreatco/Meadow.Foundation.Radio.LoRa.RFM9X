@@ -139,7 +139,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             Console.WriteLine($"Device Address in JoinAccept: {devAddress.ToHexString(false)}");
             DeviceAddress = devAddress;
             DownlinkSettings = message[11..12];
-            ReceiveDelay = message[12..13];
+            ReceiveDelay = message[12..13].Span[0] & 0x15;
             CfList = message.Length == 13 + 16 ? message[13..] : ROM.Empty;
         }
 
@@ -147,7 +147,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public ROM NetworkId { get; set; }
         public ROM DeviceAddress { get; set; }
         public ROM DownlinkSettings { get; set; }
-        public ROM ReceiveDelay { get; set; }
+        public int ReceiveDelay { get; set; }
         public ROM CfList { get; set; }
 
         // TODO: Remove?
@@ -169,12 +169,12 @@ namespace Meadow.Foundation.Radio.LoRaWan
             sb.AppendLine($"                 NetID = {NetworkId.ToHexString()}");
             sb.AppendLine($"               DevAddr = {DeviceAddress.ToHexString()}");
             sb.AppendLine($"            DLSettings = {DownlinkSettings.ToHexString()}");
-            sb.AppendLine($"               RxDelay = {ReceiveDelay.ToHexString()}");
+            sb.AppendLine($"               RxDelay = {ReceiveDelay}");
             sb.AppendLine($"                CFList = {CfList.ToHexString()}");
             sb.AppendLine($"");
             //sb.AppendLine($"DLSettings.RX1DRoffset = " + this.getDLSettingsRxOneDRoffset() + "");
             //sb.AppendLine($"DLSettings.RX2DataRate = " + this.getDLSettingsRxTwoDataRate() + "");
-            //sb.AppendLine($"           RxDelay.Del = " + this.getRxDelayDel() + "");
+            sb.AppendLine($"           RxDelay.Del = {ReceiveDelay}");
             sb.AppendLine($"");
             return sb.ToString();
         }
@@ -426,7 +426,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             sb.AppendLine($"                 FPort = {FPort.ToHexString()}");
             sb.AppendLine($"            FRMPayload = {FrmPayload.ToHexString()}");
             sb.AppendLine($"");
-            sb.AppendLine($"                ( FHDR = DevAddr[4] | FCtrl[1] | FCnt[2] | FOpts[0..15] )");
+            sb.AppendLine($"          ( FHDR = DevAddr[4] | FCtrl[1] | FCnt[2] | FOpts[0..15] )");
             sb.AppendLine($"               DevAddr = {DeviceAddress.ToHexString()} (Big Endian)");
             sb.AppendLine($"                 FCtrl = {FrameCtrl.Value.ToHexString()}");
             sb.AppendLine($"                  FCnt = {FCnt.ToHexString()} (Big Endian)");
@@ -437,8 +437,16 @@ namespace Meadow.Foundation.Radio.LoRaWan
             sb.AppendLine($"                  FCnt = {FCnt.ToHexString()}");
             sb.AppendLine($"             FCtrl.ACK = {FrameCtrl.Ack}");
             sb.AppendLine($"             FCtrl.ADR = {FrameCtrl.Adr}");
+            sb.AppendLine($"             FCtrl.Rfu = {FrameCtrl.Rfu}");
+            sb.AppendLine($"        FCtrl.FPending = {FrameCtrl.FPending}");
+            sb.AppendLine($"     FCtrl.FOptsLength = {FrameCtrl.FOptsLength}");
             return sb.ToString();
         }
+    }
+
+    public class FOpts(ROM bytes)
+    {
+
     }
 
     public class UnconfirmedDataUpPacket : DataPacket
@@ -470,7 +478,9 @@ namespace Meadow.Foundation.Radio.LoRaWan
     }
 
     public class UnconfirmedDataDownPacket(ROM message,AppSKey? appSKey,
-                                           NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);
+                                           NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey)
+    {
+    }
 
     public class ConfirmedDataUpPacket(ROM message,AppSKey? appSKey,
                                        NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);

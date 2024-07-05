@@ -1,13 +1,11 @@
 ﻿using System;
-
 using Meadow.Hardware;
 using Meadow.Units;
 
-namespace Meadow.Foundation.Radio.LoRa.RFM9X
+namespace Meadow.Foundation.Radio.Sx127X
 {
-    public record Rfm9XConfiguration(
+    public record Sx172XConfiguration(
         byte[] DeviceAddress,
-        LoRaChannels Channels,
         IMeadowDevice Device,
         ISpiBus SpiBus,
         IPin ChipSelectPin,
@@ -22,7 +20,6 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
         // TODO: Add all the other possible settings
         public byte[] DeviceAddress { get; } = DeviceAddress ?? throw new ArgumentNullException(nameof(DeviceAddress));
         public Frequency SpiFrequency { get; } = new(1, Units.Frequency.UnitType.Kilohertz);
-        public LoRaChannels Channels { get; } = Channels ?? throw new ArgumentNullException(nameof(Channels));
         public IMeadowDevice Device { get; } = Device ?? throw new ArgumentNullException(nameof(Device));
         public ISpiBus SpiBus { get; } = SpiBus ?? throw new ArgumentNullException(nameof(SpiBus));
         public IPin ChipSelectPin { get; } = ChipSelectPin ?? throw new ArgumentNullException(nameof(ChipSelectPin));

@@ -8,7 +8,6 @@ namespace Meadow.Foundation.Radio.LoRa
     /// </summary>
     public interface ILoRaRadio : IRadio
     {
-        public ValueTask<Envelope> SendAndReceive(ReadOnlyMemory<byte> messagePayload, TimeSpan timeout);
         public ValueTask SetLoRaParameters(LoRaParameters parameters);
     }
 

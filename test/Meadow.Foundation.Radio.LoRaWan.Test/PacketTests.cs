@@ -59,8 +59,10 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
             var path = @"D:\Dropbox\dev\GitHub\otaa_settings.bin";
             var contents = File.ReadAllBytes(path);
             var settings = new OtaaSettings(contents);
-            var packet = new UnconfirmedDataDownPacket(Convert.FromBase64String("YO+W/SeAAQAAtovyH2fVLqss3+YrXTaSWY9W9d5nenqUeLZnCT4E"), settings.AppSKey, settings.NetworkSKey);
+            Console.WriteLine(settings);
+            var packet = new UnconfirmedDataDownPacket(Convert.FromHexString("41578931AA2C912C40DD13D9E04E74652CC2282C1E5A7596912A"), settings.AppSKey, settings.NetworkSKey);
             Console.WriteLine(packet);
+            Console.WriteLine(Convert.FromBase64String("QVeJMaoskSxA3RPZ4E50ZSzCKCweWnWWkSo=").ToHexString(true));
         }
 
         [Test]

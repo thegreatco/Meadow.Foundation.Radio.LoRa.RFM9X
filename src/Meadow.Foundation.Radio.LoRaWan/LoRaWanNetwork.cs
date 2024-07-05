@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+
 using Meadow.Foundation.Radio.LoRa;
 using Meadow.Logging;
 
@@ -10,6 +11,24 @@ namespace Meadow.Foundation.Radio.LoRaWan
         private static readonly AppEui DefaultAppEui = new([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         private readonly AppEui _appEui = parameters.AppEui ?? DefaultAppEui;
         public OtaaSettings? Settings;
+
+        private readonly Func<LoRaParameters> _defaultUplinkParameters =
+            () => new(parameters.FrequencyManager.GetNextUplinkFrequency(),
+                      parameters.FrequencyManager.UplinkBandwidth,
+                      CodingRate.Cr45,
+                      SpreadingFactor.Sf7,
+                      false,
+                      true,
+                      false);
+
+        private readonly LoRaParameters _defaultDownlinkParameters = 
+            new(parameters.FrequencyManager.DownlinkBaseFrequency,
+                parameters.FrequencyManager.DownlinkBandwidth,
+                CodingRate.Cr45,
+                SpreadingFactor.Sf7,
+                false,
+                true,
+                true);
 
         public async ValueTask Initialize()
         {
@@ -39,7 +58,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 }
             }
             Settings = settings;
-            Console.WriteLine(settings);
+            logger.Debug("Settings");
+            logger.Debug(settings.ToString());
             // This is just an insanity check
             ThrowIfSettingsNull();
         }
@@ -55,18 +75,28 @@ namespace Meadow.Foundation.Radio.LoRaWan
                                                      payload,
                                                      Settings.AppSKey,
                                                      Settings.NetworkSKey);
+
+            await radio.SetLoRaParameters(_defaultUplinkParameters());
             logger.Debug("Sending message");
-            logger.Trace($"PHYPayload: {Convert.ToBase64String(dataPacket.PhyPayload.Span)}");
             await radio.Send(dataPacket.PhyPayload).ConfigureAwait(false);
             await Settings!.IncUplinkFrameCounter().ConfigureAwait(false);
+            var packet = await radio.Receive(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            logger.Debug($"Received message: {Convert.ToBase64String(packet.MessagePayload)}");
             logger.Debug("Finished sending message");
         }
 
         private async ValueTask<JoinAcceptPacket> SendJoinRequest(DeviceNonce devNonce)
         {
+            logger.Info("Sending join-request");
             var request = new JoinRequestPacket(parameters.AppKey, _appEui, parameters.DevEui, devNonce);
-            var res = await radio.SendAndReceive(request.PhyPayload, TimeSpan.FromMinutes(1));
-            logger.Debug(Convert.ToBase64String(res.MessagePayload));
+            await radio.SetLoRaParameters(_defaultUplinkParameters());
+            await radio.Send(request.PhyPayload);
+            logger.Debug("join-request sent, waiting for response");
+            // TODO: sleep until downlink time
+            await Task.Delay(4000).ConfigureAwait(false);
+            await radio.SetLoRaParameters(_defaultDownlinkParameters);
+            var res = await radio.Receive(TimeSpan.FromSeconds(10));
+            logger.Debug($"Join accept received: {Convert.ToBase64String(res.MessagePayload)}");
             return new JoinAcceptPacket(parameters.AppKey, res.MessagePayload);
         }
 

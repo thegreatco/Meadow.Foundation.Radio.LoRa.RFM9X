@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Text;
-using Meadow.Devices;
 using System.Threading.Tasks;
+using Meadow.Devices;
 using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Units;
 
-namespace Meadow.Foundation.Radio.LoRa.RFM9X
+namespace Meadow.Foundation.Radio.Sx127X
 {
     public class MeadowApp : App<F7FeatherV1>
     {
@@ -13,8 +13,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
         private TheThingsNetwork _theThingsNetwork;
         public override async Task Initialize()
         {
-            var config = new Rfm9XConfiguration([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-                                                LoRaChannels.Us915Fsb2,
+            var config = new Sx172XConfiguration([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
                                                 Device,
                                                 Device.CreateSpiBus(new Frequency(10, Frequency.UnitType.Megahertz)),
                                                 Device.Pins.D00,
