@@ -1,7 +1,3 @@
-using Meadow.Foundation.Serialization;
-
-using System.Text;
-
 namespace Meadow.Foundation.Radio.LoRaWan.Test
 {
     public class PacketTests
@@ -23,9 +19,9 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
                                             0,
                                             new NetworkSKey([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                                             new AppSKey([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
-            byte[] appEui = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-            byte[] devEui = [0x06, 0x31, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70];
-            var packet = new JoinRequestPacket(settings.AppKey, appEui, devEui, new byte[] { 0x00, 0x00 });
+            var appEui = new AppEui([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            var devEui = new DevEui([0x06, 0x31, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70]);
+            var packet = new JoinRequestPacket(settings.AppKey, appEui, devEui, new DeviceNonce([0x00, 0x00]));
             var payload = Convert.ToBase64String(packet.MacPayloadWithMic.ToArray());
             Assert.That(payload, Is.EqualTo("AAAAAAAAAAAABjEA2H7Vs3AAAPQxuTw="));
         }

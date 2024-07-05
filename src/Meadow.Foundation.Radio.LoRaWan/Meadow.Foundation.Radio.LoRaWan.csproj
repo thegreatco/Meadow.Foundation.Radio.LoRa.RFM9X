@@ -10,4 +10,7 @@
 		<PackageReference Include="Meadow.Logging" Version="1.12.2" />
 		<PackageReference Include="Meadow.Contracts" Version="1.12.2" />
 	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\Meadow.Foundation.Radio.LoRa\Meadow.Foundation.Radio.LoRa.csproj" />
+	</ItemGroup>
 </Project>

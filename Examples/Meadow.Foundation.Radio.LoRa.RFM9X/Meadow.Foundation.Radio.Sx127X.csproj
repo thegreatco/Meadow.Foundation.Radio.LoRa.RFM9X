@@ -23,7 +23,7 @@
         </None>
     </ItemGroup>
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.LoRa.RFM9X.csproj" />
+      <ProjectReference Include="..\..\src\Meadow.Foundation.Radio.LoRa.RFM9X\Meadow.Foundation.Radio.Sx127X.csproj" />
       <ProjectReference Include="..\..\src\Meadow.Foundation.Radio.LoRaWan\Meadow.Foundation.Radio.LoRaWan.csproj" />
     </ItemGroup>
     <ItemGroup>

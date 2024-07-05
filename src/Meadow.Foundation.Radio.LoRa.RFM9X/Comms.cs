@@ -1,12 +1,11 @@
 ﻿using System;
 using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Units;
-
 using static Meadow.Foundation.Radio.LoRa.RFM9X.LoRaRegisters;
 
-namespace Meadow.Foundation.Radio.LoRa.RFM9X
+namespace Meadow.Foundation.Radio.Sx127X
 {
-    public partial class Rfm9X
+    public partial class Sx127X
     {
         private void WriteRegister(Register register, byte value)
         {

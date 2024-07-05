@@ -2,7 +2,6 @@
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using Meadow.Foundation.Serialization;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
@@ -17,6 +16,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
+    public record struct DevEui(byte[] Value);
+    public record struct AppEui(byte[] Value);
     public record struct AppKey(byte[] Value);
     public record struct AppNonce(byte[] Value);
     public record struct NetworkId(byte[] Value);

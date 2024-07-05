@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Meadow.Foundation.Radio.LoRaWan\Meadow.Foundation.Radio.LoRaWan.csproj" />
+    <ProjectReference Include="..\Meadow.Foundation.Radio.LoRa\Meadow.Foundation.Radio.LoRa.csproj" />
   </ItemGroup>
 
 </Project>

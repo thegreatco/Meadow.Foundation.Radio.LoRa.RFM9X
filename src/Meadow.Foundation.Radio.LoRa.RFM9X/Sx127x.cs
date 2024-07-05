@@ -2,30 +2,19 @@
 using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
-
+using Meadow.Foundation.Radio.LoRa;
+using Meadow.Foundation.Radio.LoRa.RFM9X;
 using Meadow.Foundation.Radio.LoRaWan;
 using Meadow.Hardware;
 using Meadow.Logging;
 using Meadow.Units;
-
 using static Meadow.Foundation.Radio.LoRa.RFM9X.LoRaRegisters;
 
-namespace Meadow.Foundation.Radio.LoRa.RFM9X
+namespace Meadow.Foundation.Radio.Sx127X
 {
-    public partial class Rfm9X : ILoRaRadio
+    public partial class Sx127X : LoRaRadio
     {
-        public class OnDataReceivedEventArgs : EventArgs
-        {
-            public Envelope Envelope { get; set; }
-        }
-
         public class OnDataTransmittedEventArgs : EventArgs;
-
-        public delegate void OnDataReceivedEventHandler(object sender, OnDataReceivedEventArgs e);
-        public event OnDataReceivedEventHandler? OnReceived;
-
-        public delegate void OnDataTransmittedEventHandler(object sender, OnDataTransmittedEventArgs e);
-        public event OnDataTransmittedEventHandler? OnTransmitted;
 
         private const int AddressHeaderLength = 1;
         private const double RfMidBandThreshold = 525000000.0;
@@ -58,7 +47,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
         public byte[] DeviceAddress { get; }
 
-        public Rfm9X(Logger logger,
+        public Sx127X(Logger logger,
                      Rfm9XConfiguration config)
         {
             _logger = logger;
@@ -110,7 +99,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             OnReceived += (sender, args) => _receiveCompleteTask?.SetResult(args.Envelope);
         }
 
-        public async ValueTask Initialize()
+        public override async ValueTask Initialize()
         {
             _logger.Debug("Initializing Modem");
             await ResetChip();
@@ -153,47 +142,18 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             _logger.Trace("Reset complete");
         }
 
-        public async ValueTask Send(byte[] addressBytes, byte[] messageBytes)
-        {
-            var payload = ArrayPool<byte>.Shared.Rent(AddressHeaderLength + addressBytes.Length + DeviceAddress.Length + messageBytes.Length);
-            var toAddressLength = (byte)(addressBytes.Length << 4);
-            var fromAddressLength = (byte)DeviceAddress.Length;
-            payload[0] = (byte)(toAddressLength | fromAddressLength);
-            var payloadIndex = 1;
-            Array.Copy(addressBytes, 0, payload, payloadIndex, addressBytes.Length);
-            payloadIndex += addressBytes.Length;
-            Array.Copy(DeviceAddress, 0, payload, payloadIndex, DeviceAddress.Length);
-            payloadIndex += DeviceAddress.Length;
-            Array.Copy(messageBytes, 0, payload, payloadIndex, messageBytes.Length);
-            payloadIndex += messageBytes.Length;
-            await Send(payload[..payloadIndex]);
-            ArrayPool<byte>.Shared.Return(payload);
-        }
-
-        public async ValueTask Send(ReadOnlyMemory<byte> payload)
+        public override async ValueTask Send(ReadOnlyMemory<byte> payload)
         {
             await SendInternal(payload);
             SetMode(RegOpMode.OpMode.StandBy);
         }
 
-        public async ValueTask<Envelope> SendAndReceive(ReadOnlyMemory<byte> messagePayload, TimeSpan timeout)
+        public override ValueTask SetLoRaParameters(LoRaParameters parameters)
         {
-            await _opSemaphore.WaitAsync();
-            try
-            {
-                // Create the TCS before we send a message to make sure we hear back properly.
-                _receiveCompleteTask = new TaskCompletionSource<Envelope>();
-                await SendInternal(messagePayload).ConfigureAwait(false);
-                // TODO: need precise timing to wait for the receive window to save power.
-                return await ReceiveInternal(timeout);
-            }
-            finally
-            {
-                _opSemaphore.Release();
-            }
+            throw new NotImplementedException();
         }
 
-        public async ValueTask<Envelope> Receive(TimeSpan timeout)
+        public override async ValueTask<Envelope> Receive(TimeSpan timeout)
         {
             await _opSemaphore.WaitAsync();
             try
@@ -221,7 +181,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 SetFrequency(_frequencyManager.DownlinkBaseFrequency);
                 // Make sure the bandwidth, error coding rate, and header mode are right
                 WriteModemConfig1(_frequencyManager.DownlinkBandwidth, ErrorCodingRate.ECR4_5, ImplicitHeaderMode.Off);
-                WriteModemConfig2(SpreadingFactor.SF7, PayloadCrcMode.Off);
+                WriteModemConfig2(LoRaRegisters.SpreadingFactor.SF7, PayloadCrcMode.Off);
                 WriteModemConfig3();
                 // Maybe we need to set gain to 0x20|0x3?
                 //WriteRegister(Register.MaxPayloadLength, 255);
@@ -289,7 +249,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
             {
                 WriteModemConfig1(_frequencyManager.UplinkBandwidth, ErrorCodingRate.ECR4_5, ImplicitHeaderMode.Off);
                 // The CRC mode should be on, but I'm having trouble with my gateway
-                WriteModemConfig2(SpreadingFactor.SF7, PayloadCrcMode.On);
+                WriteModemConfig2(LoRaRegisters.SpreadingFactor.SF7, PayloadCrcMode.On);
                 WriteModemConfig3();
                 WriteRegister(Register.SyncWord, 0x34);
                 WriteRegister(Register.FifoTransmitBaseAddress, 0x00);
@@ -406,9 +366,10 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
                 if (PayloadHasMinimumLength(payload) == false)
                     return;
 
+                
                 // I'm pretty sure we have to ignore the first byte here
-                var envelope = new Envelope((MessageType)payload[1], payload);
-                OnReceived?.Invoke(this, new OnDataReceivedEventArgs { Envelope = envelope });
+                var envelope = new Envelope(payload);
+                OnReceivedHandler(new RadioDataReceived(envelope));
 
                 SetMode(RegOpMode.OpMode.Sleep);
             }
@@ -432,8 +393,7 @@ namespace Meadow.Foundation.Radio.LoRa.RFM9X
 
             _logger.Debug("Handling Transmit done");
             SetMode(RegOpMode.OpMode.Sleep);
-
-            OnTransmitted?.Invoke(this, new OnDataTransmittedEventArgs());
+            OnTransmittedHandler(new RadioDataTransmitted());
         }
     }
 }

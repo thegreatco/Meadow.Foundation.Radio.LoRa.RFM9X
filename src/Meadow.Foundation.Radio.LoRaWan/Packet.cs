@@ -51,7 +51,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public class JoinRequestPacket : Packet
     {
-        public JoinRequestPacket(AppKey appKey, ROM appEui, ROM devEui, ROM devNonce)
+        public JoinRequestPacket(AppKey appKey, AppEui appEui, DevEui devEui, DeviceNonce devNonce)
         {
             AppEui = appEui;
             DevEui = devEui;
@@ -60,9 +60,9 @@ namespace Meadow.Foundation.Radio.LoRaWan
             // Now create the MAC payload
             var macPayload = new byte[19];
             macPayload[0] = (byte)PacketType.JoinRequest;
-            appEui.Span.CopyTo(macPayload.AsSpan(1));
-            devEui.Span.CopyTo(macPayload.AsSpan(9));
-            devNonce.Span.CopyTo(macPayload.AsSpan(17));
+            appEui.Value.CopyTo(macPayload.AsSpan(1));
+            devEui.Value.CopyTo(macPayload.AsSpan(9));
+            devNonce.Value.CopyTo(macPayload.AsSpan(17));
             MacPayload = macPayload;
 
             // Calculate the message integrity check
@@ -88,14 +88,14 @@ namespace Meadow.Foundation.Radio.LoRaWan
             {
                 throw new ArgumentException("Invalid Join Request packet length");
             }
-            AppEui = message[1..9];
-            DevEui = message[9..17];
-            DevNonce = message[17..19];
+            AppEui = new AppEui(message[1..9].ToArray());
+            DevEui = new DevEui(message[9..17].ToArray());
+            DevNonce = new DeviceNonce(message[17..19].ToArray());
         }
 
-        public ROM AppEui { get; set; }
-        public ROM DevEui { get; set; }
-        public ROM DevNonce { get; set; }
+        public AppEui AppEui { get; set; }
+        public DevEui DevEui { get; set; }
+        public DeviceNonce DevNonce { get; set; }
 
         public override string ToString()
         {
@@ -109,9 +109,9 @@ namespace Meadow.Foundation.Radio.LoRaWan
             sb.AppendLine($"                   MIC = {Mic.ToHexString()}");
             sb.AppendLine("");
             sb.AppendLine($"          ( MACPayload = AppEUI[8] | DevEUI[8] | DevNonce[2] )");
-            sb.AppendLine($"                AppEUI = {AppEui.ToHexString()}");
-            sb.AppendLine($"                DevEUI = {DevEui.ToHexString()}");
-            sb.AppendLine($"              DevNonce = {DevNonce.ToHexString()}");
+            sb.AppendLine($"                AppEUI = {AppEui.Value.ToHexString()}");
+            sb.AppendLine($"                DevEUI = {DevEui.Value.ToHexString()}");
+            sb.AppendLine($"              DevNonce = {DevNonce.Value.ToHexString()}");
             return sb.ToString();
         }
     }

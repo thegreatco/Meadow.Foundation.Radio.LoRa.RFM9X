@@ -1,16 +1,14 @@
 ﻿using System;
-using System.IO;
 using System.Threading.Tasks;
-
-using Meadow.Foundation.Serialization;
+using Meadow.Foundation.Radio.LoRa;
 using Meadow.Logging;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    public abstract class LoRaWanNetwork(Logger logger, IPlatformOS os, ILoRaRadio radio, byte[] devEui, AppKey appKey, byte[]? appEui = null)
+    public abstract class LoRaWanNetwork(Logger logger, ILoRaRadio radio, LoRaWanParameters parameters)
     {
-        private static readonly byte[] DefaultAppEui = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        private readonly byte[] _appEui = appEui ?? DefaultAppEui;
+        private static readonly AppEui DefaultAppEui = new([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        private readonly AppEui _appEui = parameters.AppEui ?? DefaultAppEui;
         public OtaaSettings? Settings;
 
         public async ValueTask Initialize()
@@ -29,7 +27,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                                            .ConfigureAwait(false);
 
                     logger.Debug("Device activated successfully");
-                    settings = new OtaaSettings(appKey, joinResponse, devNonce);
+                    settings = new OtaaSettings(parameters.AppKey, joinResponse, devNonce);
                     await settings.SaveSettings().ConfigureAwait(false);
                     logger.Debug("Wrote settings to file");
                 }
@@ -66,10 +64,10 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
         private async ValueTask<JoinAcceptPacket> SendJoinRequest(DeviceNonce devNonce)
         {
-            var request = new JoinRequestPacket(appKey, _appEui, devEui, devNonce.Value);
+            var request = new JoinRequestPacket(parameters.AppKey, _appEui, parameters.DevEui, devNonce);
             var res = await radio.SendAndReceive(request.PhyPayload, TimeSpan.FromMinutes(1));
             logger.Debug(Convert.ToBase64String(res.MessagePayload));
-            return new JoinAcceptPacket(appKey, res.MessagePayload);
+            return new JoinAcceptPacket(parameters.AppKey, res.MessagePayload);
         }
 
         private void ThrowIfSettingsNull()
