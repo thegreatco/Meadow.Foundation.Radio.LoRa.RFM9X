@@ -7,6 +7,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 {
     public record struct DeviceNonce(byte[] Value)
     {
+        public readonly int Length => Value.Length;
         public static DeviceNonce GenerateNewNonce()
         {
             var random = new Random();
@@ -16,18 +17,44 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
-    public record struct DevEui(byte[] Value);
-    public record struct AppEui(byte[] Value);
-    public record struct AppKey(byte[] Value);
-    public record struct AppNonce(byte[] Value);
-    public record struct NetworkId(byte[] Value);
 
+    public record struct Mic(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
+
+    public record struct DevEui(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
+    public record struct JoinEui(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
+    public record struct AppKey(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
+    public record struct JoinNonce(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
+    public record struct NetworkId(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
     public record struct DeviceAddress(byte[] Value)
     {
-        public int Length => Value.Length;
+        public readonly int Length => Value.Length;
     }
-    public record struct NetworkSKey(byte[] Value);
-    public record struct AppSKey(byte[] Value);
+    public record struct NetworkSKey(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
+    public record struct AppSKey(byte[] Value)
+    {
+        public readonly int Length => Value.Length;
+    }
 
     /// <summary>
     /// Contains the settings for Over The Air Activation (OTAA) for a LoRaWAN device.
@@ -40,7 +67,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public OtaaSettings(ReadOnlyMemory<byte> bytes)
         {
             AppKey = new AppKey(bytes[..16].ToArray());
-            AppNonce = new AppNonce(bytes[16..19].ToArray());
+            AppNonce = new JoinNonce(bytes[16..19].ToArray());
             NetworkId = new NetworkId(bytes[19..21].ToArray());
             DeviceNonce = new DeviceNonce(bytes[22..24]
                                                .ToArray());
@@ -52,7 +79,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
 
         public OtaaSettings(AppKey appKey,
-                            AppNonce appNonce,
+                            JoinNonce appNonce,
                             NetworkId networkId,
                             DeviceAddress deviceAddress,
                             DeviceNonce deviceNonce,
@@ -75,7 +102,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public OtaaSettings(AppKey appKey, JoinAcceptPacket joinResponse, DeviceNonce deviceNonce)
         {
             AppKey = appKey;
-            AppNonce = new AppNonce(joinResponse.AppNonce.ToArray());
+            AppNonce = new JoinNonce(joinResponse.AppNonce.ToArray());
             NetworkId = new NetworkId(joinResponse.NetworkId.ToArray());
             DeviceAddress = new DeviceAddress(joinResponse.DeviceAddress.ToArray());
             Console.WriteLine($"Device Address: {DeviceAddress.Value.ToHexString(false)}");
@@ -87,7 +114,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
 
         public AppKey AppKey { get; set; }
-        public AppNonce AppNonce { get; set; }
+        public JoinNonce AppNonce { get; set; }
         public NetworkId NetworkId { get; set; }
         public DeviceNonce DeviceNonce { get; set; }
         public DeviceAddress DeviceAddress { get; set; }
@@ -129,8 +156,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             var bytes = new byte[16];
             bytes[0] = 0x02;
-            Array.Copy(AppNonce.Value,    0, bytes, 1,                                      AppNonce.Value.Length);
-            Array.Copy(NetworkId.Value,   0, bytes, 1 + AppNonce.Value.Length,              NetworkId.Value.Length);
+            Array.Copy(AppNonce.Value, 0, bytes, 1, AppNonce.Value.Length);
+            Array.Copy(NetworkId.Value, 0, bytes, 1 + AppNonce.Value.Length, NetworkId.Value.Length);
             Array.Copy(DeviceNonce.Value, 0, bytes, 1 + AppNonce.Value.Length + NetworkId.Value.Length, DeviceNonce.Value.Length);
 
             return new AppSKey(EncryptionTools.EncryptMessage(AppKey.Value, bytes));

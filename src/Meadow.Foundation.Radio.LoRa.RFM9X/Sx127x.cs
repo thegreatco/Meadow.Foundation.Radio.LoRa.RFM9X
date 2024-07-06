@@ -113,8 +113,8 @@ namespace Meadow.Foundation.Radio.Sx127X
             var val = ReadRegister(Register.Version);
             if (val != 0x12)
                 throw new InvalidOperationException($"Invalid version {val}");
-            // more powah!
-            WriteRegister(Register.PaConfig, 0xFF);
+            // turn on PA_BOOST pin
+            WriteRegister(Register.PaConfig, (byte)((ReadRegister(Register.PaConfig) & 0b01111111) | 0b10000000));
             WriteRegister(Register.PaRamp, (byte)((ReadRegister(Register.PaRamp) & 0xF0) | 0x80));
 
             SetMode(RegOpMode.OpMode.Sleep);

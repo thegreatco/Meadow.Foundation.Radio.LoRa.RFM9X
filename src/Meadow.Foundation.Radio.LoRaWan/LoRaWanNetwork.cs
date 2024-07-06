@@ -8,8 +8,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
 {
     public abstract class LoRaWanNetwork(Logger logger, ILoRaRadio radio, LoRaWanParameters parameters)
     {
-        private static readonly AppEui DefaultAppEui = new([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        private readonly AppEui _appEui = parameters.AppEui ?? DefaultAppEui;
+        private static readonly JoinEui DefaultAppEui = new([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        private readonly JoinEui _appEui = parameters.AppEui ?? DefaultAppEui;
         public OtaaSettings? Settings;
 
         private readonly Func<LoRaParameters> _defaultUplinkParameters =
@@ -21,7 +21,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                       true,
                       false);
 
-        private readonly LoRaParameters _defaultDownlinkParameters = 
+        private readonly LoRaParameters _defaultDownlinkParameters =
             new(parameters.FrequencyManager.DownlinkBaseFrequency,
                 parameters.FrequencyManager.DownlinkBandwidth,
                 CodingRate.Cr45,
@@ -60,8 +60,14 @@ namespace Meadow.Foundation.Radio.LoRaWan
             Settings = settings;
             logger.Debug("Settings");
             logger.Debug(settings.ToString());
+            radio.OnReceived += Radio_OnReceived;
             // This is just an insanity check
             ThrowIfSettingsNull();
+        }
+
+        private void Radio_OnReceived(object sender, RadioDataReceived e)
+        {
+            // TODO: Handle unsolicited downlink messages
         }
 
         public async ValueTask SendMessage(byte[] payload)
@@ -79,9 +85,27 @@ namespace Meadow.Foundation.Radio.LoRaWan
             await radio.SetLoRaParameters(_defaultUplinkParameters());
             logger.Debug("Sending message");
             await radio.Send(dataPacket.PhyPayload).ConfigureAwait(false);
+
             await Settings!.IncUplinkFrameCounter().ConfigureAwait(false);
-            var packet = await radio.Receive(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            logger.Debug($"Received message: {Convert.ToBase64String(packet.MessagePayload)}");
+
+            try
+            {
+                await radio.SetLoRaParameters(_defaultDownlinkParameters);
+
+                var downlinkData = await radio.Receive(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+                var packet = new UnconfirmedDataDownPacket(downlinkData.MessagePayload, Settings.AppSKey, Settings.NetworkSKey);
+                if (packet.DeviceAddress != Settings.DeviceAddress)
+                {
+                    logger.Trace("Received downlink message with incorrect device address");
+                    return;
+                }
+                logger.Debug($"Received message: {packet}");
+            }
+            catch (TimeoutException)
+            {
+                logger.Error("No downlink received in window");
+            }
             logger.Debug("Finished sending message");
         }
 

@@ -108,6 +108,39 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public static class Helpers
     {
+        public static bool IsEqual(this byte[] array1, byte[] array2)
+        {
+            // First, check if the references are the same, which would mean they are equal
+            if (ReferenceEquals(array1, array2))
+            {
+                return true;
+            }
+
+            // Check for nulls
+            if (array1 == null || array2 == null)
+            {
+                return false; // If either is null (and not both), they're not equal
+            }
+
+            // Efficient comparison: if lengths differ, arrays are not equal
+            if (array1.Length != array2.Length)
+            {
+                return false;
+            }
+
+            // Compare elements
+            for (int i = 0; i < array1.Length; i++)
+            {
+                if (array1[i] != array2[i])
+                {
+                    return false; // As soon as one element differs, return false
+                }
+            }
+
+            // If we got here, all elements are equal
+            return true;
+        }
+
         public static string ToBase64(this byte[] bytes)
         {
             return Convert.ToBase64String(bytes);
@@ -133,14 +166,14 @@ namespace Meadow.Foundation.Radio.LoRaWan
             return Convert.ToBase64String(bytes.Span);
         }
 
-        public static string ToHexString(this byte[] bytes, bool prefix = true)
+        public static string ToHexString(this byte[] bytes, bool prefix = false)
         {
             return prefix
                        ? $"0x{BitConverter.ToString(bytes).Replace("-", ", 0x")}"
                        : $"{BitConverter.ToString(bytes).Replace("-", "")}";
         }
 
-        public static string ToHexString(this byte @byte, bool prefix = true)
+        public static string ToHexString(this byte @byte, bool prefix = false)
         {
             return ToHexString([@byte]);
         }
@@ -154,21 +187,27 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             if (span.Length == 0)
                 return string.Empty;
-            var chars = new char[span.Length * 2 + (prefix ? 3 : 0)];
+            var chars = new char[span.Length * (2 + (prefix ? 4 : 0))];
             var offset = 0;
             foreach (var b in span)
             {
-                var hex = b.ToString("X2");
-                chars[offset] = hex[0];
-                chars[offset + 1] = hex[1];
+
                 if (prefix)
                 {
-                    chars[offset + 2] = ',';
-                    chars[offset + 3] = ' ';
-                    offset += 4;
+                    var hex = b.ToString("X2");
+                    chars[offset] = '0';
+                    chars[offset + 1] = 'x';
+                    chars[offset + 2] = hex[0];
+                    chars[offset + 3] = hex[1];
+                    chars[offset + 4] = ',';
+                    chars[offset + 5] = ' ';
+                    offset += 6;
                 }
                 else
                 {
+                    var hex = b.ToString("X2");
+                    chars[offset] = hex[0];
+                    chars[offset + 1] = hex[1];
                     offset += 2;
                 }
             }
@@ -205,6 +244,26 @@ namespace Meadow.Foundation.Radio.LoRaWan
             }
 
             return new string(chars);
+        }
+
+        public static void CopyToReverse<T>(this Span<T> src, T[] dest)
+        {
+            if (dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for (var i = 0; i < src.Length; i++)
+            {
+                dest[i] = src[src.Length - i - 1];
+            }
+        }
+
+        public static void CopyToReverse<T>(this Span<T> src, Span<T> dest)
+        {
+            if (dest.Length < src.Length)
+                throw new ArgumentException("Destination array is too small");
+            for (var i = 0; i < src.Length; i++)
+            {
+                dest[i] = src[src.Length - i - 1];
+            }
         }
 
         public static void CopyToReverse<T>(this ReadOnlySpan<T> src, T[] dest)

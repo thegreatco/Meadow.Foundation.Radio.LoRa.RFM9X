@@ -9,7 +9,7 @@ namespace Meadow.Foundation.Radio.Sx127X
 {
     public class MeadowApp : App<F7FeatherV1>
     {
-        private Radio.Sx127X.Sx127X _sx127X;
+        private Sx127X _sx127X;
         private TheThingsNetwork _theThingsNetwork;
         public override async Task Initialize()
         {
@@ -21,13 +21,12 @@ namespace Meadow.Foundation.Radio.Sx127X
                                                 Device.Pins.D03,
                                                 Dio3: Device.Pins.D06,
                                                 Dio4: Device.Pins.D05);
-            _sx127X = new Radio.Sx127X.Sx127X(Resolver.Log,
-                                              config);
+            _sx127X = new Sx127X(Resolver.Log, config);
 
             // Needs to be in LSB format
             var devEui = new DevEui([0x06, 0x31, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70]);
             var appKey = new AppKey([0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67]);
-            var appEui = new AppEui([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            var appEui = new JoinEui([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
             
             var loRaWanParameters = new LoRaWanParameters(LoRaWanChannel.Us915Fsb2, appKey, devEui, appEui);
             _theThingsNetwork = new TheThingsNetwork(Resolver.Log, _sx127X, loRaWanParameters);
@@ -39,7 +38,7 @@ namespace Meadow.Foundation.Radio.Sx127X
         {
             while (true)
             {
-                var str = $"{DateTime.UtcNow} Hello!";
+                var str = $"Hello";
                 Resolver.Log.Info(str);
                 await _theThingsNetwork.SendMessage(Encoding.UTF8.GetBytes(str))
                                        .ConfigureAwait(false);
