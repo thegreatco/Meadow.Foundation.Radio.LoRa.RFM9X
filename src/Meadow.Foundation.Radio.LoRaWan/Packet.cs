@@ -177,7 +177,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public int Length { get; } = 1;
     }
 
-    public readonly record struct FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, IReadOnlyList<MacCommand> MacCommands)
+    public record class FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, IReadOnlyList<MacCommand> MacCommands)
     {
         public FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, ROM? FOptions)
             : this(DeviceAddress, FrameControl, FrameCount, FOptions == null ? Array.Empty<MacCommand>() : MacCommandFactory.Create(FOptions.Value))
@@ -207,7 +207,9 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 return b;
             }
         }
+
         public IReadOnlyList<MacCommand> MacCommands { get; } = MacCommands;
+
         public ROM Value
         {
             get
@@ -697,11 +699,34 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public abstract override string ToString();
     }
 
-    public class PacketFactory(OtaaSettings settings)
+    public interface IPacketFactory
     {
-        public LoRaMessage Parse(ROM data)
+        public LoRaMessage Parse(byte[] data);
+        public JoinAccept ParseJoinAccept(ROM data);
+        public DataMessage ParseUnconfirmedDataUp(ROM data);
+        public DataMessage ParseUnconfirmedDataDown(ROM data);
+        public DataMessage ParseConfirmedDataUp(ROM data);
+        public DataMessage ParseConfirmedDataDown(ROM data);
+        public DataMessage CreateLinkCheckRequestMessage();
+        public DataMessage CreateAdaptiveDataRateAnswer();
+        public DataMessage CreateDutyCycleAnswer();
+        public DataMessage CreateRxParamSetupAnswer();
+        public DataMessage CreateDevStatusAnswer();
+        public DataMessage CreateNewChannelAnswer();
+        public DataMessage CreateRxTimingSetupAnswer();
+        public DataMessage CreateTxParamSetupAnswer();
+        public DataMessage CreateDlChannelAnswer();
+        public DataMessage CreateDeviceTimeRequest();
+        public DataMessage CreateUnconfirmedDataUpMessage(byte[] payload);
+    }
+
+    public class PacketFactory(OtaaSettings settings) : IPacketFactory
+    {
+        public readonly OtaaSettings Settings = settings;
+
+        public LoRaMessage Parse(byte[] data)
         {
-            var macHeader = new MacHeader(data.Span[0]);
+            var macHeader = new MacHeader(data[0]);
             return macHeader.PacketType switch
             {
                 PacketType.JoinResponse => ParseJoinAccept(data),
@@ -716,34 +741,34 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
         public JoinAccept ParseJoinAccept(ROM data)
         {
-            return JoinAccept.FromPhy(settings.AppKey, data);
+            return JoinAccept.FromPhy(Settings.AppKey, data);
         }
 
         public DataMessage ParseUnconfirmedDataUp(ROM data)
         {
-            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
-            settings.IncDownlinkFrameCounter();
+            var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
+            Settings.IncDownlinkFrameCounter();
             return message;
         }
 
         public DataMessage ParseUnconfirmedDataDown(ROM data)
         {
-            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
-            settings.IncDownlinkFrameCounter();
+            var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
+            Settings.IncDownlinkFrameCounter();
             return message;
         }
 
         public DataMessage ParseConfirmedDataUp(ROM data)
         {
-            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
-            settings.IncDownlinkFrameCounter();
+            var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
+            Settings.IncDownlinkFrameCounter();
             return message;
         }
 
         public DataMessage ParseConfirmedDataDown(ROM data)
         {
-            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
-            settings.IncDownlinkFrameCounter();
+            var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
+            Settings.IncDownlinkFrameCounter();
             return message;
         }
 
@@ -752,8 +777,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
             MacCommand[] macCommands = [new LinkCheckReq()];
             var macHeader = new MacHeader(PacketType.UnconfirmedDataUp, 0x00);
             var frameControl = new UplinkFrameControl(false, false, false, false, (byte)macCommands.Sum(x => x.Length));
-            var frameHeader = new FrameHeader(settings.DeviceAddress, frameControl, settings.UplinkFrameCounter, macCommands);
-            var message = new DataMessage(settings.AppSKey, settings.NetworkSKey, macHeader, frameHeader, settings.UplinkFrameCounter, null, null);
+            var frameHeader = new FrameHeader(Settings.DeviceAddress, frameControl, Settings.UplinkFrameCounter, macCommands);
+            var message = new DataMessage(Settings.AppSKey, Settings.NetworkSKey, macHeader, frameHeader, Settings.UplinkFrameCounter, null, null);
             return message;
         }
 
@@ -806,8 +831,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             var macHeader = new MacHeader(PacketType.UnconfirmedDataUp, 0x00);
             var frameControl = new UplinkFrameControl(false, false, false, false, 0);
-            var frameHeader = new FrameHeader(settings.DeviceAddress, frameControl, settings.UplinkFrameCounter, Array.Empty<MacCommand>());
-            var message = new DataMessage(settings.AppSKey, settings.NetworkSKey, macHeader, frameHeader, settings.UplinkFrameCounter, 1, payload);
+            var frameHeader = new FrameHeader(Settings.DeviceAddress, frameControl, Settings.UplinkFrameCounter, Array.Empty<MacCommand>());
+            var message = new DataMessage(Settings.AppSKey, Settings.NetworkSKey, macHeader, frameHeader, Settings.UplinkFrameCounter, 1, payload);
             return message;
         }
     }

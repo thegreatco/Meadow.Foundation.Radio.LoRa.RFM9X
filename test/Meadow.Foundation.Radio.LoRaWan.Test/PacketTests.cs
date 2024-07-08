@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace Meadow.Foundation.Radio.LoRaWan.Test
 {
     public class PacketTests
