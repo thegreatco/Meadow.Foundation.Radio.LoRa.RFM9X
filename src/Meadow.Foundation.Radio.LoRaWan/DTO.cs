@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,44 +18,47 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
+    public abstract class ByteValue(byte[] Value)
+    {
+        public readonly byte[] Value = Value;
+        public readonly int Length = Value.Length;
+        public override string ToString()
+        {
+            return Value.ToHexString();
+        }
+        public override bool Equals(object? obj)
+        {
+            if (obj is ByteValue other)
+            {
+                return Value.SequenceEqual(other.Value);
+            }
+            return false;
+        }
 
-    public record struct Mic(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
+        public override int GetHashCode()
+        {
+            unchecked // Overflow is fine, just wrap
+            {
+                int hash = 17;
+                // Compute hash code from the contents of the byte array
+                foreach (byte element in Value)
+                {
+                    hash = hash * 31 + element.GetHashCode();
+                }
+                return hash;
+            }
+        }
     }
 
-    public record struct DevEui(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct JoinEui(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct AppKey(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct JoinNonce(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct NetworkId(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct DeviceAddress(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct NetworkSKey(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
-    public record struct AppSKey(byte[] Value)
-    {
-        public readonly int Length => Value.Length;
-    }
+    public class Mic(byte[] Value) : ByteValue(Value);
+    public class DevEui(byte[] Value) : ByteValue(Value);
+    public class JoinEui(byte[] Value) : ByteValue(Value);
+    public class AppKey(byte[] Value) : ByteValue(Value);
+    public class JoinNonce(byte[] Value) : ByteValue(Value);
+    public class NetworkId(byte[] Value) : ByteValue(Value);
+    public class DeviceAddress(byte[] Value) : ByteValue(Value);
+    public class NetworkSKey(byte[] Value) : ByteValue(Value);
+    public class AppSKey(byte[] Value) : ByteValue(Value);
 
     /// <summary>
     /// Contains the settings for Over The Air Activation (OTAA) for a LoRaWAN device.
@@ -99,12 +103,12 @@ namespace Meadow.Foundation.Radio.LoRaWan
             AppSKey = appSKey;
         }
 
-        public OtaaSettings(AppKey appKey, JoinAcceptPacket joinResponse, DeviceNonce deviceNonce)
+        public OtaaSettings(AppKey appKey, JoinAccept joinAccept, DeviceNonce deviceNonce)
         {
             AppKey = appKey;
-            AppNonce = new JoinNonce(joinResponse.AppNonce.ToArray());
-            NetworkId = new NetworkId(joinResponse.NetworkId.ToArray());
-            DeviceAddress = new DeviceAddress(joinResponse.DeviceAddress.ToArray());
+            AppNonce = joinAccept.JoinNonce;
+            NetworkId = joinAccept.NetworkId;
+            DeviceAddress = joinAccept.DeviceAddress;
             Console.WriteLine($"Device Address: {DeviceAddress.Value.ToHexString(false)}");
             DeviceNonce = deviceNonce;
             UplinkFrameCounter = 0;
@@ -123,22 +127,22 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public NetworkSKey NetworkSKey { get; set; }
         public AppSKey AppSKey { get; set; }
 
-        internal async ValueTask IncUplinkFrameCounter()
+        internal void IncUplinkFrameCounter()
         {
             UplinkFrameCounter++;
-            await using var s = File.Open(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            using var s = File.Open(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
             s.Seek(28, SeekOrigin.Begin);
-            await s.WriteAsync(BitConverter.GetBytes(UplinkFrameCounter)[..2]);
-            await s.FlushAsync();
+            s.Write(BitConverter.GetBytes(UplinkFrameCounter)[..2]);
+            s.Flush();
         }
 
-        internal async ValueTask IncDownlinkFrameCounter()
+        internal void IncDownlinkFrameCounter()
         {
             DownlinkFrameCounter++;
-            await using var s = File.Open(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            using var s = File.Open(FileName, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
             s.Seek(30, SeekOrigin.Begin);
-            await s.WriteAsync(BitConverter.GetBytes(UplinkFrameCounter)[..2]);
-            await s.FlushAsync();
+            s.Write(BitConverter.GetBytes(UplinkFrameCounter)[..2]);
+            s.Flush();
         }
 
         private NetworkSKey GenerateNetworkSKey()

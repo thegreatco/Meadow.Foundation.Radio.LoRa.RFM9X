@@ -337,6 +337,7 @@ namespace Meadow.Foundation.Radio.Sx127X
 
                 _logger.Trace($"Data: {payload.ToHexString()}");
 
+                // TODO: fix SNR calculation as it's more complex than just reading the value
                 var snr = (int)ReadRegister(Register.LastPacketSnr);
                 var packetRssi = (int)ReadRegister(Register.LastPacketRssi);
                 var rssi = packetRssi;
@@ -363,7 +364,7 @@ namespace Meadow.Foundation.Radio.Sx127X
 
 
                 // I'm pretty sure we have to ignore the first byte here
-                var envelope = new Envelope(payload);
+                var envelope = new Envelope(payload, snr);
                 OnReceivedHandler(new RadioDataReceived(envelope));
 
                 SetMode(RegOpMode.OpMode.Sleep);

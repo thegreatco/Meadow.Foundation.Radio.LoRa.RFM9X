@@ -1,7 +1,11 @@
 ﻿using Meadow.Units;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime;
 using System.Text;
+using System.Threading.Tasks;
 
 using ROM = System.ReadOnlyMemory<byte>;
 
@@ -84,11 +88,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
                                                    FieldSizes.FPortFieldSize +
                                                    FieldSizes.MacPayloadFieldMaxSize +
                                                    FieldSizes.MicFieldSize;
-    }
-
-    internal readonly record struct JoinRequestOffsets
-    {
-
     }
 
     public enum PacketType : byte
@@ -178,12 +177,37 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public int Length { get; } = 1;
     }
 
-    public readonly record struct FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, ROM FOptions)
+    public readonly record struct FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, IReadOnlyList<MacCommand> MacCommands)
     {
+        public FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, ROM? FOptions)
+            : this(DeviceAddress, FrameControl, FrameCount, FOptions == null ? Array.Empty<MacCommand>() : MacCommandFactory.Create(FOptions.Value))
+        {
+        }
         public DeviceAddress DeviceAddress { get; } = DeviceAddress;
         public FrameControl FrameControl { get; } = FrameControl;
         public int FrameCount { get; } = FrameCount;
-        public ROM FOptions { get; } = FOptions;
+        // TODO: Parse the FOptions
+        public ROM FOptions
+        {
+            get
+            {
+                if (MacCommands.Count == 0)
+                    return ROM.Empty;
+
+                var length = MacCommands.Sum(x => x.Length);
+                if (length > 15)
+                    throw new InvalidOperationException("FOptions cannot exceed 15 bytes");
+                var b = new byte[length];
+                var offset = 0;
+                foreach (var command in MacCommands)
+                {
+                    command.Value.CopyTo(b.AsSpan(offset));
+                    offset += command.Length;
+                }
+                return b;
+            }
+        }
+        public IReadOnlyList<MacCommand> MacCommands { get; } = MacCommands;
         public ROM Value
         {
             get
@@ -193,14 +217,17 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 DeviceAddress.Value.CopyToReverse(bytes);
                 bytes[DeviceAddress.Length] = FrameControl.Value;
                 frameCount.CopyTo(bytes.AsSpan(DeviceAddress.Length + 1));
-                if (FOptions.Length > 0)
-                    FOptions.Span.CopyTo(bytes.AsSpan(DeviceAddress.Length + 1 + frameCount.Length));
+                var fOptions = FOptions;
+                if (fOptions.Length > 0)
+                    fOptions.Span.CopyTo(bytes.AsSpan(DeviceAddress.Length + 1 + frameCount.Length));
                 return bytes;
             }
         }
     }
 
-    public record struct JoinRequest(AppKey AppKey, JoinEui JoinEui, DevEui DeviceEui, DeviceNonce DeviceNonce)
+    public abstract class LoRaMessage();
+
+    public class JoinRequest(AppKey AppKey, JoinEui JoinEui, DevEui DeviceEui, DeviceNonce DeviceNonce) : LoRaMessage
     {
         #region ranges
         private static int PayloadSize = FieldSizes.MhdrFieldSize + FieldSizes.JoinEuiFieldSize + FieldSizes.DevEuiFieldSize + FieldSizes.DevNonceFieldSize + FieldSizes.MicFieldSize;
@@ -212,7 +239,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
         private static Range DevEuiRange = JoinEuiRange.End..(JoinEuiRange.End.Value + FieldSizes.DevEuiFieldSize);
         private static Range DevNonceRange = DevEuiRange.End..(DevEuiRange.End.Value + FieldSizes.DevNonceFieldSize);
         #endregion
-        private byte[] _encryptedMacPayload;
         private AppKey AppKey { get; set; } = AppKey;
         public MacHeader MacHeader { get; private set; } = new MacHeader(0x00);
         public JoinEui JoinEui { get; private set; } = JoinEui;
@@ -254,23 +280,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
             }
         }
 
-        // TODO: Add a method to check the MIC
-
-        public static JoinRequest FromPhy(ROM data)
-        {
-            var j = new JoinRequest()
-            {
-                MacHeader = new MacHeader(data.Span[0]),
-                JoinEui = new JoinEui(data[1..9].ToArray()),
-                DeviceEui = new DevEui(data[9..17].ToArray()),
-                DeviceNonce = new DeviceNonce(data[17..19].ToArray()),
-            };
-            var calculatedMic = new Mic(data[MicRange].ToArray());
-            if (j.Mic.Value.IsEqual(calculatedMic.Value) == false)
-                throw new MicMismatchException(calculatedMic, j.Mic);
-            return j;
-        }
-
         public override string ToString()
         {
             var sb = new StringBuilder();
@@ -290,7 +299,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
-    public record struct JoinAccept(
+    public class JoinAccept(
         AppKey AppKey,
         MacHeader MacHeader,
         JoinNonce JoinNonce,
@@ -298,7 +307,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         DeviceAddress DeviceAddress,
         DownlinkSettings DownlinkSettings,
         int ReceiveDelay,
-        ICFList CFList)
+        ICFList? CFList) : LoRaMessage
     {
         #region ranges
         private static Range MacPayloadRange = FieldSizes.MhdrFieldSize..^4;
@@ -388,22 +397,21 @@ namespace Meadow.Foundation.Radio.LoRaWan
             var d = new byte[data.Length];
             d[MacHeaderRange.Start] = data.Span[MacHeaderRange.Start];
             decryptedData.CopyTo(d.AsSpan(MacHeaderRange.End));
-            var j = new JoinAccept()
+            var macHeader = new MacHeader(d[MacHeaderRange][0]);
+            var joinNonce = new JoinNonce(d[JoinNonceRange]);
+            var networkId = new NetworkId(d[NetIdRange]);
+            var deviceAddress = new DeviceAddress(d[DevAddrRange]);
+            var downlinkSettings = new DownlinkSettings(d[DlSettingsRange][0]);
+            var receiveDelay = d[RxDelayRange][0];
+            ICFList? cfList = d.Length == MessageSizes.JoinAcceptFrameMinimumSize ? null : d[CFListRange.End] == 0x00 ? new CFListType0(d[CFListRange]) : new CFListType1(d[CFListRange]);
+            var j = new JoinAccept(appKey, macHeader, joinNonce, networkId, deviceAddress, downlinkSettings, receiveDelay, cfList)
             {
-                AppKey = appKey,
                 _phyPayload = data.ToArray(),
-                MacHeader = new MacHeader(d[MacHeaderRange][0]),
-                JoinNonce = new JoinNonce(d[JoinNonceRange]),
-                NetworkId = new NetworkId(d[NetIdRange]),
-                DeviceAddress = new DeviceAddress(d[DevAddrRange]),
-                DownlinkSettings = new DownlinkSettings(d[DlSettingsRange][0]),
-                ReceiveDelay = d[RxDelayRange][0],
-                CFList = d.Length == MessageSizes.JoinAcceptFrameMinimumSize ? null : d[CFListRange.End] == 0x00 ? new CFListType0(d[CFListRange]) : new CFListType1(d[CFListRange])
             };
 
-            var calculatedMic = new Mic(d[MicRange]);
-            if (j.Mic.Value.IsEqual(calculatedMic.Value) == false)
-                throw new MicMismatchException(calculatedMic, j.Mic);
+            var messageMic = new Mic(d[MicRange]);
+            if (j.Mic.Value.IsEqual(messageMic.Value) == false)
+                throw new MicMismatchException(messageMic, j.Mic);
 
             return j;
         }
@@ -434,16 +442,16 @@ namespace Meadow.Foundation.Radio.LoRaWan
         }
     }
 
-    public record struct UnconfirmedUplinkMessage(
+    public class DataMessage(
         AppSKey AppSKey,
         NetworkSKey NetworkSKey,
+        MacHeader MacHeader,
         FrameHeader FrameHeader,
         int FCount,
-        byte FPort,
-        byte[] FrmPayload)
+        byte? FPort,
+        byte[]? FrmPayload) : LoRaMessage
     {
         #region ranges
-        private static int PayloadSize = FieldSizes.MhdrFieldSize + FieldSizes.JoinEuiFieldSize + FieldSizes.DevEuiFieldSize + FieldSizes.DevNonceFieldSize + FieldSizes.MicFieldSize;
         private static Range MicRange = ^4..;
         private static Range MacHeaderRange = 0..FieldSizes.MhdrFieldSize;
         private static Range MacPayloadRange = FieldSizes.MhdrFieldSize..^4;
@@ -454,71 +462,158 @@ namespace Meadow.Foundation.Radio.LoRaWan
         #endregion
         private AppSKey _appSKey = AppSKey;
         private NetworkSKey _networkSKey = NetworkSKey;
-        public MacHeader MacHeader { get; } = new MacHeader(PacketType.UnconfirmedDataUp, 0x00);
-        public FrameHeader FrameHeader { get; } = FrameHeader;
-        public int FCount { get; } = FCount;
-        public byte FPort { get; } = FPort;
+        public MacHeader MacHeader { get; private set; } = MacHeader;
+        public FrameHeader FrameHeader { get; private set; } = FrameHeader;
+        public int FCount { get; private set; } = FCount;
+        public byte? FPort { get; private set; } = FPort;
 
         public byte[] MacPayload
         {
             get
             {
+                var frameHeader = FrameHeader;
+                var frmPayload = FrmPayload;
+                byte[] b;
+                if (FPort.HasValue)
+                {
+                    b = new byte[frameHeader.Value.Length + 1 + frmPayload.Length];
+                }
+                else
+                {
+                    b = new byte[frameHeader.Value.Length + frmPayload.Length];
+                }
+                var offset = 0;
                 // the 1 below is for the FPort
-                var b = new byte[FrameHeader.Value.Length + 1 + FrmPayload.Length];
-                FrameHeader.Value.CopyTo(b);
-                b[FrameHeader.Value.Length] = FPort;
-                FrmPayload.CopyTo(b.AsSpan(FrameHeader.Value.Length + 1));
+                frameHeader.Value.CopyTo(b);
+                offset += frameHeader.Value.Length;
+                if (FPort.HasValue)
+                {
+                    b[offset] = FPort.Value;
+                    offset += 1;
+                }
+                if (frmPayload.Length > 0)
+                {
+                    frmPayload.CopyTo(b.AsSpan(offset));
+                }
                 return b;
             }
         }
 
-        public byte[] FrmPayload { get; } = EncryptionTools.EncryptMessage(AppSKey.Value, true, FrameHeader.DeviceAddress, FCount, FrmPayload);
+        public byte[] FrmPayload { get; private set; } = FrmPayload == null ? Array.Empty<byte>() : EncryptionTools.EncryptMessage(AppSKey.Value, true, FrameHeader.DeviceAddress, FCount, FrmPayload);
 
         public Mic Mic
         {
             get
             {
+                // Copy this locally since each call is an allocation
+                var macPayload = MacPayload;
                 var micIn = new byte[16 + 1 /*mhdr*/ + MacPayload.Length];
                 micIn[0] = 0x49;
                 micIn[1] = 0x00;
                 micIn[2] = 0x00;
                 micIn[3] = 0x00;
                 micIn[4] = 0x00;
-                micIn[5] = 0x00; // Uplink
-                FrameHeader.DeviceAddress.Value.CopyTo(micIn, 6);
-                BitConverter.GetBytes(FCount).CopyToReverse(micIn.AsSpan(10));
+                micIn[5] = MacHeader.PacketType is PacketType.ConfirmedDataUp or PacketType.UnconfirmedDataUp ? (byte)0x00 : (byte)0x01; // Uplink
+                FrameHeader.DeviceAddress.Value.CopyToReverse(micIn, 6);
+                BitConverter.GetBytes(FCount).CopyTo(micIn.AsSpan(10));
                 micIn[14] = 0x00;
-                FrmPayload.CopyTo(micIn, 16);
+                micIn[15] = (byte)(MacHeader.Length + macPayload.Length);
+                micIn[16] = MacHeader.Value;
+                macPayload.CopyTo(micIn, 17);
                 return new Mic(EncryptionTools.ComputeAesCMac(_networkSKey.Value, micIn)[..4]);
             }
+        }
+
+        public byte[] PhyPayload
+        {
+            get
+            {
+                var mic = Mic;
+                var mac = MacPayload;
+                var bytes = new byte[1 + mac.Length + mic.Length];
+                bytes[0] = MacHeader.Value;
+                mac.CopyTo(bytes.AsSpan(1));
+                Mic.Value.CopyTo(bytes.AsSpan(1 + mac.Length));
+                return bytes;
+            }
+        }
+
+        public static DataMessage FromPhy(AppSKey appSKey, NetworkSKey networkSKey, ROM data)
+        {
+            var macHeader = new MacHeader(data.Span[0]);
+            var mic = data[MicRange];
+            var macPayload = data[MacPayloadRange];
+            var macOffset = 0;
+            var deviceAddress = new DeviceAddress(macPayload[..4].Reverse());
+            macOffset += 4;
+
+            FrameControl frameControl = macHeader.PacketType switch
+            {
+                PacketType.UnconfirmedDataUp => new UplinkFrameControl(macPayload.Span[macOffset]),
+                PacketType.UnconfirmedDataDown => new DownlinkFrameControl(macPayload.Span[macOffset]),
+                PacketType.ConfirmedDataUp => new UplinkFrameControl(macPayload.Span[macOffset]),
+                PacketType.ConfirmedDataDown => new DownlinkFrameControl(macPayload.Span[macOffset]),
+                _ => throw new ArgumentOutOfRangeException(nameof(macHeader.PacketType))
+            };
+            macOffset += 1;
+            var fCnt = BitConverter.ToUInt16(macPayload[macOffset..(macOffset + 2)].ToArray());
+            macOffset += 2;
+
+            byte[] fOptions = Array.Empty<byte>();
+            byte? fPort = null;
+            if (frameControl.FOptsLength > 0)
+            {
+                fOptions = macPayload[macOffset..(macOffset + frameControl.FOptsLength)].ToArray();
+                macOffset += frameControl.FOptsLength;
+            }
+            else
+            {
+                fPort = macPayload[(macOffset)..(macOffset + 1)].ToArray()[0];
+                macOffset += 1;
+            }
+            var frameHeader = new FrameHeader(deviceAddress, frameControl, fCnt, fOptions);
+            var encryptedFrmPayload = macPayload[(macOffset)..].ToArray();
+            byte[] frmPayload;
+            bool isUplink = macHeader.PacketType is PacketType.ConfirmedDataUp or PacketType.UnconfirmedDataUp;
+            if (fPort == 0)
+            {
+                frmPayload = EncryptionTools.EncryptMessage(networkSKey.Value, isUplink, deviceAddress, fCnt, encryptedFrmPayload);
+            }
+            else
+            {
+                frmPayload = EncryptionTools.EncryptMessage(appSKey.Value, isUplink, deviceAddress, fCnt, encryptedFrmPayload);
+            }
+            var j = new DataMessage(appSKey, networkSKey, macHeader, frameHeader, fCnt, fPort, frmPayload);
+
+            var messageMic = new Mic(data[MicRange].ToArray());
+
+            return j;
         }
 
         public override string ToString()
         {
             var sb = new StringBuilder();
             sb.AppendLine($"          Message Type = Data");
-            //sb.AppendLine($"            PHYPayload = {PhyPayload.ToHexString()}");
+            sb.AppendLine($"            PHYPayload = {PhyPayload.ToHexString()}");
             sb.AppendLine($"");
             sb.AppendLine($"          ( PHYPayload = MHDR[1] | MACPayload[..] | MIC[4] )");
-            sb.AppendLine($"                  MHDR = {MacHeader.Value.ToHexString()}");
+            sb.AppendLine($"        Message Header = {MacHeader.Value.ToHexString()}");
             sb.AppendLine($"            MACPayload = {MacPayload.ToHexString()}");
-            sb.AppendLine($"    MIC (From Payload) = {Mic.Value.ToHexString()}");
-            sb.AppendLine($"      MIC (Calculated) = ");
+            sb.AppendLine($"      MIC (Calculated) = {Mic.Value.ToHexString()}");
             sb.AppendLine($"");
             sb.AppendLine($"          ( MACPayload = FHDR | FPort | FRMPayload )");
-            sb.AppendLine($"                  FHDR = {FrameHeader.Value.ToHexString()}");
-            sb.AppendLine($"                 FPort = {FPort.ToHexString()}");
-            //sb.AppendLine($"   EncryptedFRMPayload = {EncryptedFrmPayload.ToHexString()}");
-            sb.AppendLine($"            FRMPayload = {FrmPayload.ToHexString()}");
+            sb.AppendLine($"           FrameHeader = {FrameHeader.Value.ToHexString()}");
+            sb.AppendLine($"             FramePort = {FPort?.ToHexString() ?? "<empty>"}");
+            sb.AppendLine($"            FRMPayload = {FrmPayload.ToHexString() ?? "<empty>"}");
             sb.AppendLine($"");
             sb.AppendLine($"          ( FHDR = DevAddr[4] | FCtrl[1] | FCnt[2] | FOpts[0..15] )");
-            sb.AppendLine($"               DevAddr = {FrameHeader.DeviceAddress.Value.ToHexString()} (Big Endian)");
-            sb.AppendLine($"                 FCtrl = {FrameHeader.FrameControl.Value.ToHexString()}");
-            sb.AppendLine($"                  FCnt = {FrameHeader.FrameCount} (Big Endian)");
-            sb.AppendLine($"                 FOpts = {FrameHeader.FOptions.ToHexString()}");
+            sb.AppendLine($"            DevAddress = {FrameHeader.DeviceAddress.Value.ToHexString()} (Big Endian)");
+            sb.AppendLine($"          FrameControl = {FrameHeader.FrameControl.Value.ToHexString()}");
+            sb.AppendLine($"            FrameCount = {FrameHeader.FrameCount} (Big Endian)");
+            sb.AppendLine($"          FrameOptions = {FrameHeader.FOptions.ToHexString()}");
             sb.AppendLine($"");
-            sb.AppendLine($"          Message Type = {this.GetType()}");
-            //sb.AppendLine($"             Direction = {(this is UnconfirmedDataUpPacket or ConfirmedDataUpPacket ? "up" : "down")}");
+            sb.AppendLine($"          Message Type = {GetType()}");
+            sb.AppendLine($"             Direction = {(MacHeader.PacketType is PacketType.ConfirmedDataUp or PacketType.UnconfirmedDataUp ? "up" : "down")}");
             sb.AppendLine($"                  FCnt = {FrameHeader.FrameCount}");
             sb.AppendLine($"             FCtrl.ACK = {FrameHeader.FrameControl.Ack}");
             sb.AppendLine($"             FCtrl.ADR = {FrameHeader.FrameControl.Adr}");
@@ -570,7 +665,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public int Length { get; } = Value.Length;
     }
 
-
     public abstract class Packet()
     {
         protected Packet(ROM data) : this()
@@ -603,446 +697,118 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public abstract override string ToString();
     }
 
-    public class JoinRequestPacket : Packet
+    public class PacketFactory(OtaaSettings settings)
     {
-        public JoinRequestPacket(AppKey appKey, JoinEui appEui, DevEui devEui, DeviceNonce devNonce)
+        public LoRaMessage Parse(ROM data)
         {
-            AppEui = appEui;
-            DevEui = devEui;
-            DevNonce = devNonce;
-
-            // Now create the MAC payload
-            var macPayload = new byte[19];
-            macPayload[0] = (byte)PacketType.JoinRequest;
-            appEui.Value.CopyTo(macPayload.AsSpan(1));
-            devEui.Value.CopyTo(macPayload.AsSpan(9));
-            devNonce.Value.CopyTo(macPayload.AsSpan(17));
-            MacPayload = macPayload;
-
-            // Calculate the message integrity check
-            Console.WriteLine("Calculating MIC");
-            var mic = CalculateMic(appKey.Value);
-            Mic = mic;
-
-            // Add this to the MAC payload
-            var macPayloadWithMic = new byte[MacPayload.Length + 4];
-            Array.Copy(macPayload, 0, macPayloadWithMic, 0, macPayload.Length);
-            Array.Copy(mic, 0, macPayloadWithMic, macPayload.Length, mic.Length);
-            MacPayloadWithMic = macPayloadWithMic;
-
-            // Set the physical payload
-            Console.WriteLine("Setting PHYPayload to MACPayloadWithMIC");
-            PhyPayload = MacPayloadWithMic;
-        }
-
-        public JoinRequestPacket(ROM message)
-            : base(message)
-        {
-            if (message.Length < 23)
+            var macHeader = new MacHeader(data.Span[0]);
+            return macHeader.PacketType switch
             {
-                throw new ArgumentException("Invalid Join Request packet length");
-            }
-            AppEui = new JoinEui(message[1..9].ToArray());
-            DevEui = new DevEui(message[9..17].ToArray());
-            DevNonce = new DeviceNonce(message[17..19].ToArray());
-        }
-
-        public JoinEui AppEui { get; set; }
-        public DevEui DevEui { get; set; }
-        public DeviceNonce DevNonce { get; set; }
-
-        public override string ToString()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"          Message Type = Join Request");
-            sb.AppendLine($"            PHYPayload = {PhyPayload.ToHexString()}");
-            sb.AppendLine();
-            sb.AppendLine($"          ( PHYPayload = MHDR[1] | MACPayload[..] | MIC[4] )");
-            sb.AppendLine($"                  MHDR = {Mhdr.ToHexString()}");
-            sb.AppendLine($"            MACPayload = {MacPayload.ToHexString()}");
-            sb.AppendLine($"                   MIC = {Mic.ToHexString()}");
-            sb.AppendLine("");
-            sb.AppendLine($"          ( MACPayload = AppEUI[8] | DevEUI[8] | DevNonce[2] )");
-            sb.AppendLine($"                AppEUI = {AppEui.Value.ToHexString()}");
-            sb.AppendLine($"                DevEUI = {DevEui.Value.ToHexString()}");
-            sb.AppendLine($"              DevNonce = {DevNonce.Value.ToHexString()}");
-            return sb.ToString();
-        }
-    }
-
-    public class JoinAcceptPacket : Packet
-    {
-        public JoinAcceptPacket(AppKey appKey, ROM message)
-            : base(message)
-        {
-            AppKey = appKey;
-            if (message.Length < 17)
-            {
-                throw new ArgumentException("Invalid Join Response packet length");
-            }
-            var decryptedData = EncryptionTools.DecryptMessage(appKey.Value, message[1..]);
-            var d = new byte[1 + decryptedData.Length];
-            d[0] = message.Span[0];
-            decryptedData.CopyTo(d.AsSpan(1));
-            message = d;
-
-            AppNonce = message[1..4];
-            NetworkId = message[4..7];
-            var devAddress = new byte[4];
-            message[7..11].Span.CopyToReverse(devAddress);
-            DeviceAddress = devAddress;
-            DownlinkSettings = message[11..12];
-            ReceiveDelay = message[12..13].Span[0] & 0x15;
-            CfList = message.Length == 13 + 16 ? message[13..] : ROM.Empty;
-        }
-
-        private AppKey AppKey;
-        public ROM AppNonce { get; set; }
-        public ROM NetworkId { get; set; }
-        public ROM DeviceAddress { get; set; }
-        public ROM DownlinkSettings { get; set; }
-        public int ReceiveDelay { get; set; }
-        public ROM CfList { get; set; }
-
-        // TODO: Remove?
-        public byte[]? JoinReqType { get; set; }
-
-        private byte[] CalculateMic(AppKey appKey)
-        {
-            var b = new byte[1 + AppNonce.Length + NetworkId.Length + DeviceAddress.Length + DownlinkSettings.Length + 1 + CfList.Length];
-            b[0] = Mhdr;
-            AppNonce.Span.CopyTo(b.AsSpan(1));
-            NetworkId.Span.CopyTo(b.AsSpan(4));
-            DeviceAddress.Span.CopyTo(b.AsSpan(7));
-            DownlinkSettings.Span.CopyTo(b.AsSpan(11));
-            b[12] = (byte)ReceiveDelay;
-            if (CfList.Length > 0)
-            {
-                CfList.Span.CopyTo(b.AsSpan(13));
-            }
-            return EncryptionTools.ComputeAesCMac(appKey.Value, b)[..4];
-        }
-
-        public override string ToString()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"          Message Type = Join Accept" + "");
-            sb.AppendLine($"            PHYPayload = {PhyPayload.ToHexString()}");
-            sb.AppendLine($"");
-            sb.AppendLine($"          ( PHYPayload = MHDR[1] | MACPayload[..] | MIC[4] )");
-            sb.AppendLine($"                  MHDR = {Mhdr.ToHexString()}");
-            sb.AppendLine($"            MACPayload = {MacPayload.ToHexString()}");
-            sb.AppendLine($"                   MIC = {Mic.ToHexString()}");
-            sb.AppendLine($"        Calculated MIC = {CalculateMic(AppKey).ToHexString(false)}");
-            sb.AppendLine($"");
-            sb.AppendLine($"          ( MACPayload = AppNonce[3] | NetID[3] | DevAddr[4] | DLSettings[1] | RxDelay[1] | CFList[0|15] )");
-            sb.AppendLine($"              AppNonce = {AppNonce.ToHexString()}");
-            sb.AppendLine($"                 NetID = {NetworkId.ToHexString()}");
-            sb.AppendLine($"               DevAddr = {DeviceAddress.ToHexString()}");
-            sb.AppendLine($"            DLSettings = {DownlinkSettings}");
-            sb.AppendLine($"               RxDelay = {ReceiveDelay}");
-            sb.AppendLine($"                CFList = {CfList.ToHexString()}");
-            sb.AppendLine($"");
-            //sb.AppendLine($"DLSettings.RX1DRoffset = " + this.getDLSettingsRxOneDRoffset() + "");
-            //sb.AppendLine($"DLSettings.RX2DataRate = " + this.getDLSettingsRxTwoDataRate() + "");
-            sb.AppendLine($"           RxDelay.Del = {ReceiveDelay}");
-            sb.AppendLine($"");
-            return sb.ToString();
-        }
-    }
-
-    public class RejoinType1RequestPacket(ROM message) : Packet(message)
-    {
-        public ROM NetworkId { get; set; } = message[2..5];
-        public ROM DevEui { get; set; } = message[5..13];
-        public ROM ReJoinCount0 { get; set; } = message[13..15];
-        public override string ToString()
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    public class RejoinType2RequestPacket(ROM message) : Packet(message)
-    {
-        public ROM NetworkId { get; set; } = message[2..10];
-        public ROM DevEui { get; set; } = message[10..18];
-        public ROM ReJoinCount1 { get; set; } = message[18..20];
-        public override string ToString()
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    public abstract class DataPacket : Packet
-    {
-        protected DataPacket(byte mhdr,
-                             DeviceAddress deviceAddress,
-                             FrameControl frameCtrl,
-                             uint fCnt,
-                             ROM fOpts,
-                             byte fPort,
-                             ROM payload,
-                             AppSKey? appSKey,
-                             NetworkSKey? networkSKey)
-        {
-            if (fOpts.Length > 15)
-            {
-                throw new ArgumentException("FOpts must be 15 bytes or less");
-            }
-            Mhdr = mhdr;
-            DeviceAddress = deviceAddress;
-
-            // Make sure the length of fOpts length is included in the FCtrl
-            if (FOpts.Length != frameCtrl.FOptsLength)
-            {
-                frameCtrl.FOptsLength = (byte)FOpts.Length;
-            }
-            FrameCtrl = frameCtrl;
-            FCnt = BitConverter.GetBytes(fCnt)[..2].Reverse();
-            FOpts = fOpts;
-            FPort = fPort;
-            Payload = payload;
-            FrmPayload = payload;
-            var fhdr = new byte[deviceAddress.Value.Length + 1 /*fctrl length*/ + FCnt.Length + fOpts.Length];
-            deviceAddress.Value.CopyToReverse(fhdr);
-            // TODO: FCtrl needs to be precisely created because it contains the fOpts length and other stuff
-            fhdr[deviceAddress.Length] = FrameCtrl.Value;
-            FCnt.Span.CopyToReverse(fhdr.AsSpan(deviceAddress.Length + 1));
-            fOpts.Span.CopyTo(fhdr.AsSpan(deviceAddress.Length + 1 + FCnt.Length));
-            FHeader = fhdr;
-            if (FPort == (byte)0x00)
-            {
-                if (networkSKey == null)
-                {
-                    throw new ArgumentNullException(nameof(networkSKey));
-                }
-
-                var encryptedMacPayload = EncryptionTools.EncryptMessage(networkSKey.Value.Value, this);
-                FrmPayload = encryptedMacPayload;
-            }
-            else
-            {
-                if (appSKey == null)
-                {
-                    throw new ArgumentNullException(nameof(appSKey));
-                }
-                var encryptedMacPayload = EncryptionTools.EncryptMessage(appSKey.Value.Value, this);
-                FrmPayload = encryptedMacPayload;
-            }
-
-            var macPayload = new byte[fhdr.Length + 1 /*fPort*/ + FrmPayload.Length];
-            FHeader.CopyTo(macPayload);
-            macPayload[fhdr.Length] = fPort;
-            FrmPayload.Span.CopyTo(macPayload.AsSpan(fhdr.Length + 1));
-            MacPayload = macPayload;
-            var micIn = new byte[16 + 1 /*mhdr*/ + macPayload.Length];
-            micIn[0] = 0x49;
-            micIn[1] = 0x00;
-            micIn[2] = 0x00;
-            micIn[3] = 0x00;
-            micIn[4] = 0x00;
-
-            micIn[5] = this is UnconfirmedDataUpPacket or ConfirmedDataUpPacket ? (byte)0x00 : (byte)0x01;
-            deviceAddress.Value.CopyToReverse(micIn.AsSpan(6));
-            FCnt.Span.CopyToReverse(micIn.AsSpan(10));
-            micIn[12] = 0x00;
-            micIn[13] = 0x00;
-            micIn[14] = 0x00;
-            micIn[15] = (byte)(1 + macPayload.Length);
-            micIn[16] = mhdr;
-            macPayload.CopyTo(micIn.AsSpan(17));
-
-            var mic = EncryptionTools.ComputeAesCMac(networkSKey!.Value.Value, micIn)[..4];
-            Mic = mic;
-            var phyPayload = new byte[1 + macPayload.Length + mic.Length];
-            phyPayload[0] = mhdr;
-            macPayload.CopyTo(phyPayload.AsSpan(1));
-            mic.CopyTo(phyPayload.AsSpan(1 + macPayload.Length));
-            PhyPayload = phyPayload;
-            MacPayloadWithMic = PhyPayload[1..];
-        }
-
-        protected DataPacket(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
-            : base(message)
-        {
-            Mhdr = message.Span[0];
-            var packetType = (PacketType)((Mhdr >> 5) & 0x07);
-            DeviceAddress = new DeviceAddress(message[1..5].Reverse());
-            FrameCtrl = packetType is PacketType.ConfirmedDataUp or PacketType.UnconfirmedDataUp
-                            ? new UplinkFrameControl(message[5..6].Span[0])
-                            : new DownlinkFrameControl(message[5..6].Span[0]);
-            FCnt = message[6..8].Reverse();
-            var fOptsLength = (message[5..6].Span[0] & 0x0f);
-            FOpts = message[8..(8 + fOptsLength)];
-            var fHdrLength = 7 + fOptsLength;
-            FHeader = message[1..(1 + fHdrLength)];
-
-            if (fHdrLength == MacPayload.Length)
-            {
-                FPort = 0x00;
-                FrmPayload = ROM.Empty;
-            }
-            else
-            {
-                FPort = message[(8 + fOptsLength)..(9 + fOptsLength)].Span[0];
-                FrmPayload = message[(9 + fOptsLength)..^4];
-            }
-
-            EncryptedFrmPayload = FrmPayload;
-
-            if (FPort == (byte)0x00)
-            {
-                if (networkSKey == null)
-                {
-                    throw new ArgumentNullException(nameof(networkSKey));
-                }
-
-                var encryptedMacPayload = EncryptionTools.EncryptMessage(networkSKey.Value.Value, this);
-                FrmPayload = encryptedMacPayload;
-            }
-            else
-            {
-                if (appSKey == null)
-                {
-                    throw new ArgumentNullException(nameof(appSKey));
-                }
-                var encryptedMacPayload = EncryptionTools.EncryptMessage(appSKey.Value.Value, this);
-                FrmPayload = encryptedMacPayload;
-            }
-        }
-
-        public DeviceAddress DeviceAddress { get; protected set; }
-        public FrameControl FrameCtrl { get; protected set; }
-        public ROM FCnt { get; protected set; }
-        public ROM FOpts { get; protected set; }
-        public ROM FHeader { get; protected set; }
-        public byte FPort { get; protected set; }
-        public ROM FrmPayload { get; protected set; }
-        public ROM EncryptedFrmPayload { get; protected set; }
-        public ROM Payload { get; protected set; }
-
-        public override string ToString()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"          Message Type = Data");
-            sb.AppendLine($"            PHYPayload = {PhyPayload.ToHexString()}");
-            sb.AppendLine($"");
-            sb.AppendLine($"          ( PHYPayload = MHDR[1] | MACPayload[..] | MIC[4] )");
-            sb.AppendLine($"                  MHDR = {Mhdr.ToHexString()}");
-            sb.AppendLine($"            MACPayload = {MacPayload.ToHexString()}");
-            sb.AppendLine($"    MIC (From Payload) = {Mic.ToHexString()}");
-            sb.AppendLine($"      MIC (Calculated) = ");
-            sb.AppendLine($"");
-            sb.AppendLine($"          ( MACPayload = FHDR | FPort | FRMPayload )");
-            sb.AppendLine($"                  FHDR = {FHeader.ToHexString()}");
-            sb.AppendLine($"                 FPort = {FPort.ToHexString()}");
-            sb.AppendLine($"   EncryptedFRMPayload = {EncryptedFrmPayload.ToHexString()}");
-            sb.AppendLine($"            FRMPayload = {FrmPayload.ToHexString()}");
-            sb.AppendLine($"");
-            sb.AppendLine($"          ( FHDR = DevAddr[4] | FCtrl[1] | FCnt[2] | FOpts[0..15] )");
-            sb.AppendLine($"               DevAddr = {DeviceAddress.Value.ToHexString()} (Big Endian)");
-            sb.AppendLine($"                 FCtrl = {FrameCtrl.Value.ToHexString()}");
-            sb.AppendLine($"                  FCnt = {FCnt.ToHexString()} (Big Endian)");
-            sb.AppendLine($"                 FOpts = {FOpts.ToHexString()}");
-            sb.AppendLine($"");
-            sb.AppendLine($"          Message Type = {this.GetType()}");
-            sb.AppendLine($"             Direction = {(this is UnconfirmedDataUpPacket or ConfirmedDataUpPacket ? "up" : "down")}");
-            sb.AppendLine($"                  FCnt = {FCnt.ToHexString()}");
-            sb.AppendLine($"             FCtrl.ACK = {FrameCtrl.Ack}");
-            sb.AppendLine($"             FCtrl.ADR = {FrameCtrl.Adr}");
-            sb.AppendLine($"             FCtrl.Rfu = {FrameCtrl.Rfu}");
-            sb.AppendLine($"        FCtrl.FPending = {FrameCtrl.FPending}");
-            sb.AppendLine($"     FCtrl.FOptsLength = {FrameCtrl.FOptsLength}");
-            return sb.ToString();
-        }
-    }
-
-    public class UnconfirmedDataUpPacket : DataPacket
-    {
-        public UnconfirmedDataUpPacket(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
-            : base(message, appSKey, networkSKey)
-        {
-        }
-
-        public UnconfirmedDataUpPacket(DeviceAddress deviceAddress,
-                                       FrameControl frameCtrl,
-                                       uint fCnt,
-                                       ROM fOpts,
-                                       byte fPort,
-                                       ROM payload,
-                                       AppSKey? appSKey,
-                                       NetworkSKey? networkSKey)
-            : base((byte)PacketType.UnconfirmedDataUp << 5,
-                   deviceAddress,
-                   frameCtrl,
-                   fCnt,
-                   fOpts,
-                   fPort,
-                   payload,
-                   appSKey,
-                   networkSKey)
-        {
-        }
-    }
-
-    public class UnconfirmedDataDownPacket(ROM message, AppSKey? appSKey,
-                                           NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey)
-    {
-    }
-
-    public class ConfirmedDataUpPacket(ROM message, AppSKey? appSKey,
-                                       NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);
-
-    public class ConfirmedDataDownPacket(ROM message, AppSKey? appSKey,
-                                         NetworkSKey? networkSKey) : DataPacket(message, appSKey, networkSKey);
-
-    public class PacketParser(AppKey appKey, AppSKey? appSKey, NetworkSKey? networkSKey)
-    {
-        public Packet Parse(ROM message)
-        {
-            var mhdr = message.Span[0];
-            var packetType = (PacketType)((mhdr >> 5) & 0x07);
-            return packetType switch
-            {
-                PacketType.JoinRequest => ParseJoinRequest(message),
-                PacketType.JoinResponse => ParseJoinAccept(appKey, message),
-                PacketType.UnconfirmedDataUp => ParseUnconfirmedDataUp(message, appSKey, networkSKey),
-                PacketType.UnconfirmedDataDown => ParseUnconfirmedDataDown(message, appSKey, networkSKey),
-                PacketType.ConfirmedDataUp => ParseConfirmedDataUp(message, appSKey, networkSKey),
-                PacketType.ConfirmedDataDown => ParseConfirmedDataDown(message, appSKey, networkSKey),
+                PacketType.JoinResponse => ParseJoinAccept(data),
+                PacketType.UnconfirmedDataUp => ParseUnconfirmedDataUp(data),
+                PacketType.UnconfirmedDataDown => ParseUnconfirmedDataDown(data),
+                PacketType.ConfirmedDataUp => ParseConfirmedDataUp(data),
+                PacketType.ConfirmedDataDown => ParseConfirmedDataDown(data),
                 //PacketType.RejoinRequest => message.Span[1] == 0x01 ? new RejoinType1RequestPacket(message) : new RejoinType2RequestPacket(message),
                 _ => throw new ArgumentException("Invalid packet type")
             };
         }
 
-        public static JoinRequestPacket ParseJoinRequest(ROM message)
+        public JoinAccept ParseJoinAccept(ROM data)
         {
-            return new JoinRequestPacket(message);
+            return JoinAccept.FromPhy(settings.AppKey, data);
         }
 
-        public static JoinAcceptPacket ParseJoinAccept(AppKey appKey, ROM message)
+        public DataMessage ParseUnconfirmedDataUp(ROM data)
         {
-            return new JoinAcceptPacket(appKey, message);
+            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
+            settings.IncDownlinkFrameCounter();
+            return message;
         }
 
-        public static UnconfirmedDataUpPacket ParseUnconfirmedDataUp(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
+        public DataMessage ParseUnconfirmedDataDown(ROM data)
         {
-            return new UnconfirmedDataUpPacket(message, appSKey, networkSKey);
+            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
+            settings.IncDownlinkFrameCounter();
+            return message;
         }
 
-        public static UnconfirmedDataDownPacket ParseUnconfirmedDataDown(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
+        public DataMessage ParseConfirmedDataUp(ROM data)
         {
-            return new UnconfirmedDataDownPacket(message, appSKey, networkSKey);
+            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
+            settings.IncDownlinkFrameCounter();
+            return message;
         }
 
-        public static ConfirmedDataUpPacket ParseConfirmedDataUp(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
+        public DataMessage ParseConfirmedDataDown(ROM data)
         {
-            return new ConfirmedDataUpPacket(message, appSKey, networkSKey);
+            var message = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, data);
+            settings.IncDownlinkFrameCounter();
+            return message;
         }
 
-        public static ConfirmedDataDownPacket ParseConfirmedDataDown(ROM message, AppSKey? appSKey, NetworkSKey? networkSKey)
+        public DataMessage CreateLinkCheckRequestMessage()
         {
-            return new ConfirmedDataDownPacket(message, appSKey, networkSKey);
+            MacCommand[] macCommands = [new LinkCheckReq()];
+            var macHeader = new MacHeader(PacketType.UnconfirmedDataUp, 0x00);
+            var frameControl = new UplinkFrameControl(false, false, false, false, (byte)macCommands.Sum(x => x.Length));
+            var frameHeader = new FrameHeader(settings.DeviceAddress, frameControl, settings.UplinkFrameCounter, macCommands);
+            var message = new DataMessage(settings.AppSKey, settings.NetworkSKey, macHeader, frameHeader, settings.UplinkFrameCounter, null, null);
+            return message;
+        }
+
+        public DataMessage CreateAdaptiveDataRateAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateDutyCycleAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateRxParamSetupAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateDevStatusAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateNewChannelAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateRxTimingSetupAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateTxParamSetupAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateDlChannelAnswer()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateDeviceTimeRequest()
+        {
+            throw new NotImplementedException();
+        }
+
+        public DataMessage CreateUnconfirmedDataUpMessage(byte[] payload)
+        {
+            var macHeader = new MacHeader(PacketType.UnconfirmedDataUp, 0x00);
+            var frameControl = new UplinkFrameControl(false, false, false, false, 0);
+            var frameHeader = new FrameHeader(settings.DeviceAddress, frameControl, settings.UplinkFrameCounter, Array.Empty<MacCommand>());
+            var message = new DataMessage(settings.AppSKey, settings.NetworkSKey, macHeader, frameHeader, settings.UplinkFrameCounter, 1, payload);
+            return message;
         }
     }
 }

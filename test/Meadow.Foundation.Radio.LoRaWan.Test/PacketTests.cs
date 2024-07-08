@@ -50,42 +50,36 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
         }
 
         [Test]
-        public void TestKnownUnconfirmedUplinkPacket()
+        public void TestUnconfirmedUplinkPacket()
         {
             var deviceAddress = new DeviceAddress(Convert.FromHexString("01020304"));
-            var packet = new UnconfirmedDataUpPacket(deviceAddress,
-                                                     new UplinkFrameControl(false, false, true, false),
-                                                     3,
-                                                     ReadOnlyMemory<byte>.Empty,
-                                                     0x01,
-                                                     "Hello!"u8.ToArray(),
-                                                     new AppSKey(Convert.FromHexString("ec925802ae430ca77fd3dd73cb2cc588")),
-                                                     new NetworkSKey(Convert.FromHexString("44024241ed4ce9a68c6a8bc055233fd3")));
-            Console.WriteLine(packet);
-            Assert.That(packet.PhyPayload.ToHexString(), Is.EqualTo("400403020120030001A4A93023B19A5C5F0828"));
             var appSKey = new AppSKey(Convert.FromHexString("ec925802ae430ca77fd3dd73cb2cc588"));
             var networkSKey = new NetworkSKey(Convert.FromHexString("44024241ed4ce9a68c6a8bc055233fd3"));
             var frameHeader = new FrameHeader(deviceAddress, new UplinkFrameControl(false, false, true, false), 3, Array.Empty<byte>());
-            var newPacket = new UnconfirmedUplinkMessage(appSKey, networkSKey, frameHeader, 3, 1, "Hello!"u8.ToArray());
-            Console.WriteLine(newPacket);
+            var packet = new DataMessage(appSKey, networkSKey, new MacHeader(PacketType.UnconfirmedDataUp, 0x00), frameHeader, 3, 1, "Hello!"u8.ToArray());
+            Assert.That(packet.MacPayload.ToHexString(), Is.EqualTo("0403020120030001A4A93023B19A"));
+            Assert.That(packet.FrameHeader.Value.ToHexString(), Is.EqualTo("04030201200300"));
+            Assert.That(packet.Mic.Value.ToHexString(), Is.EqualTo("5C5F0828"));
+            Assert.That(packet.FrameHeader.FrameControl.Ack, Is.True);
+            Assert.That(packet.PhyPayload.ToHexString(), Is.EqualTo("400403020120030001A4A93023B19A5C5F0828"));
+            Assert.That(packet.MacHeader.PacketType, Is.EqualTo(PacketType.UnconfirmedDataUp));
+            Console.WriteLine(packet);
         }
 
-        // YO+W/SeAAAAAql/24u9PtVHxm9zCW1Y6AFTv7aOWCf+y37ic27ja
-        // YO2W/SeL5gADMAIAcQMwAP8BBtSofuY=
-        // YO2W/SeAlQAAfRYZWdTIiZZyJbooISmMYfezihxBIneyzxiBXHHR
+        // YOiW/SeBAAAGZYSMww==
+        // YOiW/SeBAQAGlDo4Wg==
         [Test]
         public void TestUnconfirmedDownlinkPacket()
         {
             var path = @"D:\Dropbox\dev\GitHub\otaa_settings.bin";
             var contents = File.ReadAllBytes(path);
             var settings = new OtaaSettings(contents);
-            Console.WriteLine(settings);
-            var packet = new UnconfirmedDataDownPacket(Convert.FromBase64String("YO2W/SeA2wAAddAhjaldS7GTPXG8NpoSaMrwQ4DMYBsUHhV76kZ9"), settings.AppSKey, settings.NetworkSKey);
-            //var packet = new UnconfirmedDataDownPacket(Convert.FromHexString("60ED96FD27800200003D6CB95322C0A717748E8609C2A47C1A8576F6BF9A79496CCBBE37CB642B"), settings.AppSKey, settings.NetworkSKey);
+            var packet = DataMessage.FromPhy(settings.AppSKey, settings.NetworkSKey, Convert.FromBase64String("YOiW/SeBAAAGZYSMww=="));
+            Assert.That(packet.MacHeader.PacketType, Is.EqualTo(PacketType.UnconfirmedDataDown));
+            Assert.That(packet.FrameHeader.FrameControl.FOptsLength, Is.EqualTo(1));
+            Assert.That(packet.FrameHeader.MacCommands.Count, Is.EqualTo(1));
+            Assert.That(packet.FrameHeader.MacCommands[0], Is.TypeOf<DevStatusReq>());
             Console.WriteLine(packet);
-            Console.WriteLine(Convert.FromBase64String("g+io+Q==").ToHexString(false));
-            Console.WriteLine(packet.EncryptedFrmPayload.ToHexString() == Convert.FromBase64String("SH5hA6WeDa0a0ZPUkxMoYgWu93cykVbzfK8=").ToHexString(false));
-            Console.WriteLine(packet.FrmPayload.Length);
         }
     }
 }

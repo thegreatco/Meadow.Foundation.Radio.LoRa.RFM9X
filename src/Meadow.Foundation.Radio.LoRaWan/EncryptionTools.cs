@@ -17,35 +17,13 @@ namespace Meadow.Foundation.Radio.LoRaWan
             return EncryptMessage(key, message.Span);
         }
 
-        public static byte[] EncryptMessage(byte[] key, DataPacket packet)
-        {
-            var blocks = (int)Math.Truncate(Math.Ceiling(packet.FrmPayload.Length / 16d));
-            var messageToEncrypt = new byte[blocks * 16];
-            for (var block = 0; block < blocks; block++)
-            {
-                var aiBlock = GetAiBlock(packet is UnconfirmedDataUpPacket or ConfirmedDataUpPacket, packet.DeviceAddress.Value, packet.FCnt.ToArray(), (byte)block);
-                Array.Copy(aiBlock, 0, messageToEncrypt, block * aiBlock.Length, aiBlock.Length);
-            }
-
-            using var aes = new AesManaged() { Key = key, Mode = CipherMode.ECB, Padding = PaddingMode.None };
-            using var encryptor = aes.CreateEncryptor();
-            var cipher = encryptor.TransformFinalBlock(messageToEncrypt, 0, messageToEncrypt.Length);
-            var text = new byte[packet.FrmPayload.Length];
-            for(var i = 0; i < packet.FrmPayload.Length; i++)
-            {
-                text[i] = (byte)(cipher[i] ^ packet.FrmPayload.Span[i]);
-            }
-
-            return text;
-        }
-
-        public static byte[] EncryptMessage(byte[] key, bool direction, DeviceAddress deviceAddress, int frameCount, byte[] frmPayload)
+        public static byte[] EncryptMessage(byte[] key, bool isUplink, DeviceAddress deviceAddress, int frameCount, byte[] frmPayload)
         {
             var blocks = (int)Math.Truncate(Math.Ceiling(frmPayload.Length / 16d));
             var messageToEncrypt = new byte[blocks * 16];
             for (var block = 0; block < blocks; block++)
             {
-                var aiBlock = GetAiBlock(direction, deviceAddress.Value, frameCount, (byte)block);
+                var aiBlock = GetAiBlock(isUplink, deviceAddress.Value, frameCount, (byte)block);
                 Array.Copy(aiBlock, 0, messageToEncrypt, block * aiBlock.Length, aiBlock.Length);
             }
 
@@ -73,27 +51,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             block[4] = 0x00;
             block[5] = uplink ? (byte)0x00 : (byte)0x01;
             deviceAddress.CopyToReverse(block, 6);
-            BitConverter.GetBytes(frameCount).CopyToReverse(block, 10);
-            block[12] = 0x00;
-            block[13] = 0x00;
-            block[14] = 0x00;
-            block[15] = (byte)(blockNumber + 0x01);
-            return block;
-        }
-
-        private static byte[] GetAiBlock(bool uplink, byte[] deviceAddress, byte[] frameCount, byte blockNumber)
-        {
-            var block = new byte[16];
-            // first byte is always 0x01
-            block[0] = 0x01;
-            // Next 4 bytes are 0x00
-            block[1] = 0x00;
-            block[2] = 0x00;
-            block[3] = 0x00;
-            block[4] = 0x00;
-            block[5] = uplink ? (byte)0x00 : (byte)0x01;
-            deviceAddress.CopyToReverse(block, 6);
-            frameCount.CopyToReverse(block, 10);
+            BitConverter.GetBytes(frameCount)[0..2].CopyTo(block, 10);
             block[12] = 0x00;
             block[13] = 0x00;
             block[14] = 0x00;
