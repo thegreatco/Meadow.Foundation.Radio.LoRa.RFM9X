@@ -17,7 +17,7 @@ namespace Meadow.Foundation.Radio.LoRa
     public interface IRadio
     {
         public ValueTask Initialize();
-        public ValueTask Send(ReadOnlyMemory<byte> messagePayload);
+        public ValueTask Send(byte[] messagePayload);
         public ValueTask<Envelope> Receive(TimeSpan timeout);
         public event EventHandler<RadioDataReceived>? OnReceived;
         public event EventHandler<RadioDataTransmitted>? OnTransmitted;

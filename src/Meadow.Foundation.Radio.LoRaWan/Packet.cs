@@ -180,7 +180,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
     public record class FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, IReadOnlyList<MacCommand> MacCommands)
     {
         public FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, ROM? FOptions)
-            : this(DeviceAddress, FrameControl, FrameCount, FOptions == null ? Array.Empty<MacCommand>() : MacCommandFactory.Create(FOptions.Value))
+            : this(DeviceAddress, FrameControl, FrameCount, FOptions == null ? Array.Empty<MacCommand>() : MacCommandFactory.Create(FrameControl is UplinkFrameControl, FOptions.Value))
         {
         }
         public DeviceAddress DeviceAddress { get; } = DeviceAddress;
@@ -622,6 +622,15 @@ namespace Meadow.Foundation.Radio.LoRaWan
             sb.AppendLine($"             FCtrl.Rfu = {FrameHeader.FrameControl.Rfu}");
             sb.AppendLine($"        FCtrl.FPending = {FrameHeader.FrameControl.FPending}");
             sb.AppendLine($"     FCtrl.FOptsLength = {FrameHeader.FrameControl.FOptsLength}");
+            if (FrameHeader.MacCommands.Count > 0)
+            sb.AppendLine($"");
+            sb.AppendLine($"          Mac Commands");
+            foreach(var command in FrameHeader.MacCommands)
+            {
+                sb.AppendLine($"          Type = {command.GetType()}");
+                sb.AppendLine($"         Value = {command.Value.ToHexString()}");
+            }
+
             return sb.ToString();
         }
     }

@@ -216,7 +216,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     response = new DataMessage(
                         Settings.AppSKey, 
                         Settings.NetworkSKey, 
-                        new MacHeader(PacketType.UnconfirmedDataDown, 0x00), 
+                        new MacHeader(PacketType.UnconfirmedDataUp, 0x00), 
                         frameHeader, 
                         Settings.UplinkFrameCounter, 
                         0, 
@@ -230,7 +230,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     response = new DataMessage(
                         Settings.AppSKey, 
                         Settings.NetworkSKey, 
-                        new MacHeader(PacketType.UnconfirmedDataDown, 0x00), 
+                        new MacHeader(PacketType.UnconfirmedDataUp, 0x00), 
                         frameHeader, 
                         Settings.UplinkFrameCounter, 
                         null, 

@@ -16,7 +16,7 @@ namespace Meadow.Foundation.Radio.LoRa
         /// </summary>
         /// <param name="messagePayload">The message to send</param>
         /// <returns>A <see cref="ValueTask"/> that completes when the radio is done transmitting</returns>
-        public abstract ValueTask Send(ReadOnlyMemory<byte> messagePayload);
+        public abstract ValueTask Send(byte[] messagePayload);
 
         /// <summary>
         /// Receive a message
@@ -31,7 +31,7 @@ namespace Meadow.Foundation.Radio.LoRa
         /// <param name="messagePayload">The message to send</param>
         /// <param name="timeout">The time to wait for a response</param>
         /// <returns>The <see cref="Envelope"/> containing the response</returns>
-        public async ValueTask<Envelope> SendAndReceive(ReadOnlyMemory<byte> messagePayload, TimeSpan timeout)
+        public async ValueTask<Envelope> SendAndReceive(byte[] messagePayload, TimeSpan timeout)
         {
             await Send(messagePayload);
             return await Receive(timeout);

@@ -70,6 +70,8 @@ namespace Meadow.Foundation.Radio.LoRaWan
             var dm = new DataMessage(appSKey, networkSKey, mh, fh, fh.FrameCount, null, Array.Empty<byte>());
             var logger = new Logger();
             var mockRadio = new Mock<ILoRaRadio>();
+            byte[]? dataSent = null;
+            mockRadio.Setup(x => x.Send(It.IsAny<byte[]>())).Callback<byte[]>(x => dataSent = x).Returns(new ValueTask());
             var mockPacketFactory = new Mock<IPacketFactory>();
             mockPacketFactory.Setup(x => x.Parse(It.IsAny<byte[]>())).Returns(dm);
             var parameters = new LoRaWanParameters(LoRaWanChannel.Us915Fsb2, appKey, devEui, joinEui);
@@ -77,10 +79,20 @@ namespace Meadow.Foundation.Radio.LoRaWan
             network.SetSettings(settings);
             network.SetPacketFactory(mockPacketFactory.Object);
 
-            var envelope = new Envelope(new byte[] { 0x02, 0x02, 0x02, 0x02 }, 0);
+            var envelope = new Envelope(new byte[] { 0x02, 0x02, 0x02, 0x02 }, 5);
             
             Assert.DoesNotThrowAsync(async () => await network.HandleMacCommands(envelope));
             Assert.That(mockRadio.Invocations.Count, Is.EqualTo(1));
+            Assert.That(dataSent, Is.Not.Null);
+            Assert.That(dataSent[8..11], Is.EqualTo(new byte[]{0x06, 0xFF, 0x05}));
+
+            var reconstituted = DataMessage.FromPhy(appSKey, networkSKey, dataSent);
+            Console.WriteLine(reconstituted);
+            Assert.That(reconstituted.FrameHeader.MacCommands.Count, Is.EqualTo(1));
+            Assert.That(reconstituted.FrameHeader.MacCommands[0], Is.TypeOf<DevStatusAns>());
+            var devStatus = (DevStatusAns)reconstituted.FrameHeader.MacCommands[0];
+            Assert.That(devStatus.Battery, Is.EqualTo(0xFF));
+            Assert.That(devStatus.RadioStatus, Is.EqualTo(5));
         }
 
         private class TestLoRaWanNetwork : TheThingsNetwork
