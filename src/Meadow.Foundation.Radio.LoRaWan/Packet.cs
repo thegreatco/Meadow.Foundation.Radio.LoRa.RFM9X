@@ -1,13 +1,7 @@
-﻿using Meadow.Units;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime;
 using System.Text;
-using System.Threading.Tasks;
-
-using ROM = System.ReadOnlyMemory<byte>;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
@@ -179,20 +173,20 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
     public record class FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, IReadOnlyList<MacCommand> MacCommands)
     {
-        public FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, ROM? FOptions)
-            : this(DeviceAddress, FrameControl, FrameCount, FOptions == null ? Array.Empty<MacCommand>() : MacCommandFactory.Create(FrameControl is UplinkFrameControl, FOptions.Value))
+        public FrameHeader(DeviceAddress DeviceAddress, FrameControl FrameControl, int FrameCount, byte[]? FOptions)
+            : this(DeviceAddress, FrameControl, FrameCount, FOptions == null ? Array.Empty<MacCommand>() : MacCommandFactory.Create(FrameControl is UplinkFrameControl, FOptions))
         {
         }
         public DeviceAddress DeviceAddress { get; } = DeviceAddress;
         public FrameControl FrameControl { get; } = FrameControl;
         public int FrameCount { get; } = FrameCount;
         // TODO: Parse the FOptions
-        public ROM FOptions
+        public byte[] FOptions
         {
             get
             {
                 if (MacCommands.Count == 0)
-                    return ROM.Empty;
+                    return [];
 
                 var length = MacCommands.Sum(x => x.Length);
                 if (length > 15)
@@ -210,7 +204,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
         public IReadOnlyList<MacCommand> MacCommands { get; } = MacCommands;
 
-        public ROM Value
+        public byte[] Value
         {
             get
             {
@@ -221,7 +215,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 frameCount.CopyTo(bytes.AsSpan(DeviceAddress.Length + 1));
                 var fOptions = FOptions;
                 if (fOptions.Length > 0)
-                    fOptions.Span.CopyTo(bytes.AsSpan(DeviceAddress.Length + 1 + frameCount.Length));
+                    fOptions.CopyTo(bytes.AsSpan(DeviceAddress.Length + 1 + frameCount.Length));
                 return bytes;
             }
         }
@@ -393,11 +387,11 @@ namespace Meadow.Foundation.Radio.LoRaWan
             }
         }
 
-        public static JoinAccept FromPhy(AppKey appKey, ROM data)
+        public static JoinAccept FromPhy(AppKey appKey, byte[] data)
         {
             var decryptedData = EncryptionTools.DecryptMessage(appKey.Value, data[MacPayloadRangeWithMic]);
             var d = new byte[data.Length];
-            d[MacHeaderRange.Start] = data.Span[MacHeaderRange.Start];
+            d[MacHeaderRange.Start] = data[MacHeaderRange.Start];
             decryptedData.CopyTo(d.AsSpan(MacHeaderRange.End));
             var macHeader = new MacHeader(d[MacHeaderRange][0]);
             var joinNonce = new JoinNonce(d[JoinNonceRange]);
@@ -486,7 +480,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 }
                 var offset = 0;
                 // the 1 below is for the FPort
-                frameHeader.Value.CopyTo(b);
+                frameHeader.Value.CopyTo(b, 0);
                 offset += frameHeader.Value.Length;
                 if (FPort.HasValue)
                 {
@@ -540,9 +534,9 @@ namespace Meadow.Foundation.Radio.LoRaWan
             }
         }
 
-        public static DataMessage FromPhy(AppSKey appSKey, NetworkSKey networkSKey, ROM data)
+        public static DataMessage FromPhy(AppSKey appSKey, NetworkSKey networkSKey, byte[] data)
         {
-            var macHeader = new MacHeader(data.Span[0]);
+            var macHeader = new MacHeader(data[0]);
             var mic = data[MicRange];
             var macPayload = data[MacPayloadRange];
             var macOffset = 0;
@@ -551,10 +545,10 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
             FrameControl frameControl = macHeader.PacketType switch
             {
-                PacketType.UnconfirmedDataUp => new UplinkFrameControl(macPayload.Span[macOffset]),
-                PacketType.UnconfirmedDataDown => new DownlinkFrameControl(macPayload.Span[macOffset]),
-                PacketType.ConfirmedDataUp => new UplinkFrameControl(macPayload.Span[macOffset]),
-                PacketType.ConfirmedDataDown => new DownlinkFrameControl(macPayload.Span[macOffset]),
+                PacketType.UnconfirmedDataUp => new UplinkFrameControl(macPayload[macOffset]),
+                PacketType.UnconfirmedDataDown => new DownlinkFrameControl(macPayload[macOffset]),
+                PacketType.ConfirmedDataUp => new UplinkFrameControl(macPayload[macOffset]),
+                PacketType.ConfirmedDataDown => new DownlinkFrameControl(macPayload[macOffset]),
                 _ => throw new ArgumentOutOfRangeException(nameof(macHeader.PacketType))
             };
             macOffset += 1;
@@ -676,46 +670,14 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public int Length { get; } = Value.Length;
     }
 
-    public abstract class Packet()
-    {
-        protected Packet(ROM data) : this()
-        {
-            PhyPayload = data;
-            Mhdr = data.Span[0];
-            MacPayload = data[1..^4];
-            MacPayloadWithMic = data[1..];
-            Mic = data[^4..];
-        }
-
-        public ROM PhyPayload { get; protected set; }
-        public byte Mhdr { get; protected set; }
-        public ROM MacPayload { get; protected set; }
-        public ROM MacPayloadWithMic { get; protected set; }
-        public ROM Mic { get; protected set; }
-
-        public byte[]? RejoinType { get; set; }
-
-        public bool VerifyMic(byte[] key)
-        {
-            return false;
-        }
-
-        private protected byte[] CalculateMic(byte[] appKey)
-        {
-            return EncryptionTools.ComputeAesCMac(appKey, MacPayload.Span)[..4];
-        }
-
-        public abstract override string ToString();
-    }
-
     public interface IPacketFactory
     {
         public LoRaMessage Parse(byte[] data);
-        public JoinAccept ParseJoinAccept(ROM data);
-        public DataMessage ParseUnconfirmedDataUp(ROM data);
-        public DataMessage ParseUnconfirmedDataDown(ROM data);
-        public DataMessage ParseConfirmedDataUp(ROM data);
-        public DataMessage ParseConfirmedDataDown(ROM data);
+        public JoinAccept ParseJoinAccept(byte[] data);
+        public DataMessage ParseUnconfirmedDataUp(byte[] data);
+        public DataMessage ParseUnconfirmedDataDown(byte[] data);
+        public DataMessage ParseConfirmedDataUp(byte[] data);
+        public DataMessage ParseConfirmedDataDown(byte[] data);
         public DataMessage CreateLinkCheckRequestMessage();
         public DataMessage CreateAdaptiveDataRateAnswer();
         public DataMessage CreateDutyCycleAnswer();
@@ -748,33 +710,33 @@ namespace Meadow.Foundation.Radio.LoRaWan
             };
         }
 
-        public JoinAccept ParseJoinAccept(ROM data)
+        public JoinAccept ParseJoinAccept(byte[] data)
         {
             return JoinAccept.FromPhy(Settings.AppKey, data);
         }
 
-        public DataMessage ParseUnconfirmedDataUp(ROM data)
+        public DataMessage ParseUnconfirmedDataUp(byte[] data)
         {
             var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
             Settings.IncDownlinkFrameCounter();
             return message;
         }
 
-        public DataMessage ParseUnconfirmedDataDown(ROM data)
+        public DataMessage ParseUnconfirmedDataDown(byte[] data)
         {
             var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
             Settings.IncDownlinkFrameCounter();
             return message;
         }
 
-        public DataMessage ParseConfirmedDataUp(ROM data)
+        public DataMessage ParseConfirmedDataUp(byte[] data)
         {
             var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
             Settings.IncDownlinkFrameCounter();
             return message;
         }
 
-        public DataMessage ParseConfirmedDataDown(ROM data)
+        public DataMessage ParseConfirmedDataDown(byte[] data)
         {
             var message = DataMessage.FromPhy(Settings.AppSKey, Settings.NetworkSKey, data);
             Settings.IncDownlinkFrameCounter();

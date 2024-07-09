@@ -165,7 +165,7 @@ namespace Meadow.Foundation.Radio.Sx127X
             return new ValueTask();
         }
 
-        public override async ValueTask Send(ReadOnlyMemory<byte> payload)
+        public override async ValueTask Send(byte[] payload)
         {
             _logger.Debug($"{DateTime.UtcNow} Sending message of {payload.Length}bytes");
             _logger.Trace(payload.ToBase64());

@@ -212,7 +212,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     }
                     // Needs a dedicated message with MacCommands in the payload
                     var frameControl = new UplinkFrameControl(false, false, false, false, 0);
-                    var frameHeader = new FrameHeader(Settings!.DeviceAddress, frameControl, Settings.UplinkFrameCounter, []);
+                    var frameHeader = new FrameHeader(Settings!.DeviceAddress, frameControl, Settings.UplinkFrameCounter, (byte[]?)null);
                     response = new DataMessage(
                         Settings.AppSKey, 
                         Settings.NetworkSKey, 
@@ -252,7 +252,6 @@ namespace Meadow.Foundation.Radio.LoRaWan
         protected MacCommand HandleDevStatusRequest(DevStatusReq request, int snr)
         {
             // TODO: we need to get the battery level from somewhere...
-            // TODO: we need to get the SNR from somewhere...
             return new DevStatusAns(255, (byte)snr);
         }
 

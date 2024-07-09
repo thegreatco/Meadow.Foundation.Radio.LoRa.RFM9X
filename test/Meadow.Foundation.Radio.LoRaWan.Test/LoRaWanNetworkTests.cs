@@ -1,6 +1,8 @@
 ﻿using Meadow.Foundation.Radio.LoRa;
 using Meadow.Logging;
 
+using Mockable.Moq;
+
 using Moq;
 
 namespace Meadow.Foundation.Radio.LoRaWan
