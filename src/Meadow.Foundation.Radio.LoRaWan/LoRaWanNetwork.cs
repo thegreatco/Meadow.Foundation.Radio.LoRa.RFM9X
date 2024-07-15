@@ -9,30 +9,14 @@ using Meadow.Logging;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
+    // TODO: We need to have a method for getting battery info, the devStatusReq/devStatusAns commands require battery info
     public abstract class LoRaWanNetwork(Logger logger, ILoRaRadio radio, LoRaWanParameters parameters)
     {
+        private static TimeSpan _sleepOffset = new(500);
         private static readonly JoinEui DefaultAppEui = new([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         private readonly JoinEui _appEui = parameters.AppEui ?? DefaultAppEui;
         protected OtaaSettings? Settings;
         protected IPacketFactory? PacketFactory;
-
-        private readonly Func<LoRaParameters> _defaultUplinkParameters =
-            () => new(parameters.FrequencyManager.GetNextUplinkFrequency(),
-                      parameters.FrequencyManager.UplinkBandwidth,
-                      CodingRate.Cr45,
-                      SpreadingFactor.Sf7,
-                      false,
-                      true,
-                      false);
-
-        private readonly LoRaParameters _defaultDownlinkParameters =
-            new(parameters.FrequencyManager.DownlinkBaseFrequency,
-                parameters.FrequencyManager.DownlinkBandwidth,
-                CodingRate.Cr45,
-                SpreadingFactor.Sf7,
-                false,
-                true,
-                true);
 
         public async ValueTask Initialize()
         {
@@ -76,12 +60,16 @@ namespace Meadow.Foundation.Radio.LoRaWan
             // TODO: Handle unsolicited downlink messages
         }
 
+        private TimeSpan GetSleepTime(TimeSpan rxDelay) => rxDelay - _sleepOffset;
+
         public async ValueTask SendMessage(byte[] payload)
         {
             ThrowIfSettingsNull();
             var message = PacketFactory!.CreateUnconfirmedDataUpMessage(payload);
 
-            await radio.SetLoRaParameters(_defaultUplinkParameters());
+            var uplinkFrequency = parameters.FrequencyManager.GetNextUplinkFrequency();
+            var loRaParameters = new LoRaParameters(uplinkFrequency.Frequency, uplinkFrequency.Bandwidth, parameters.Plan.CodingRate, parameters.Plan.UpstreamSpreadingFactor, false, true, false);
+            await radio.SetLoRaParameters(loRaParameters);
             logger.Debug("Sending message");
             await radio.Send(message.PhyPayload).ConfigureAwait(false);
 
@@ -89,11 +77,15 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
             try
             {
+                // TODO: This needs to be made background async, so we can hand off control to the app and still process the incoming data
+                await Task.Delay(GetSleepTime(parameters.Plan.ReceiveDelay1)).ConfigureAwait(false);
                 // Wait for a downlink message just in case
-                await radio.SetLoRaParameters(_defaultDownlinkParameters);
+                var downlinkFrequency = parameters.FrequencyManager.GetDownlinkFrequency();
+                loRaParameters = new LoRaParameters(downlinkFrequency.Frequency, downlinkFrequency.Bandwidth, parameters.Plan.CodingRate, parameters.Plan.UpstreamSpreadingFactor, false, true, false);
+                await radio.SetLoRaParameters(loRaParameters);
 
                 var downlinkData = await radio.Receive(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-                
+
                 await HandleReceivedPacket(downlinkData).ConfigureAwait(false);
             }
             catch (TimeoutException)
@@ -107,12 +99,21 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             logger.Info("Sending join-request");
             var request = new JoinRequest(parameters.AppKey, _appEui, parameters.DevEui, devNonce);
-            await radio.SetLoRaParameters(_defaultUplinkParameters());
+            var joinFrequency = parameters.FrequencyManager.GetJoinFrequency();
+
+            // TODO: Sort out the data rate for each frequency, DR0 for 0..64, DR4 for 65..72
+            var loRaParameters = new LoRaParameters(joinFrequency.Frequency, joinFrequency.Bandwidth, parameters.Plan.CodingRate, SpreadingFactor.Sf10, false, true, false);
+            await radio.SetLoRaParameters(loRaParameters);
             await radio.Send(request.PhyPayload);
             logger.Debug("join-request sent, waiting for response");
-            // TODO: sleep until downlink time
-            await Task.Delay(4000).ConfigureAwait(false);
-            await radio.SetLoRaParameters(_defaultDownlinkParameters);
+
+            // Wait for the join-accept message
+            await Task.Delay(GetSleepTime(parameters.Plan.JoinAcceptDelay1)).ConfigureAwait(false);
+
+            var receiveFrequency = parameters.FrequencyManager.GetDownlinkFrequency();
+            // TODO: The data rate is what drives the bandwidth and spreading factor, these are hard coded for join-accept messages to DR0 for 0..63 and DR4 for 64..71
+            loRaParameters = new LoRaParameters(receiveFrequency.Frequency, receiveFrequency.Bandwidth, parameters.Plan.CodingRate, SpreadingFactor.Sf10, false, true, true);
+            await radio.SetLoRaParameters(loRaParameters);
             var res = await radio.Receive(TimeSpan.FromSeconds(10));
             logger.Debug($"Join accept received: {Convert.ToBase64String(res.MessagePayload)}");
             return JoinAccept.FromPhy(parameters.AppKey, res.MessagePayload);
@@ -146,7 +147,9 @@ namespace Meadow.Foundation.Radio.LoRaWan
         {
             ThrowIfSettingsNull();
             var message = PacketFactory!.CreateLinkCheckRequestMessage();
-            await radio.SetLoRaParameters(_defaultUplinkParameters());
+            var uplinkFrequency = parameters.FrequencyManager.GetNextUplinkFrequency();
+            var loRaParameters = new LoRaParameters(uplinkFrequency.Frequency, uplinkFrequency.Bandwidth, parameters.Plan.CodingRate, parameters.Plan.UpstreamSpreadingFactor, false, true, false);
+            await radio.SetLoRaParameters(loRaParameters);
             await radio.Send(message.PhyPayload);
             // TODO: this setting needs to get parsed from the join-accept message.
             await Task.Delay(4000).ConfigureAwait(false);
@@ -214,12 +217,12 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     var frameControl = new UplinkFrameControl(false, false, false, false, 0);
                     var frameHeader = new FrameHeader(Settings!.DeviceAddress, frameControl, Settings.UplinkFrameCounter, (byte[]?)null);
                     response = new DataMessage(
-                        Settings.AppSKey, 
-                        Settings.NetworkSKey, 
-                        new MacHeader(PacketType.UnconfirmedDataUp, 0x00), 
-                        frameHeader, 
-                        Settings.UplinkFrameCounter, 
-                        0, 
+                        Settings.AppSKey,
+                        Settings.NetworkSKey,
+                        new MacHeader(PacketType.UnconfirmedDataUp, 0x00),
+                        frameHeader,
+                        Settings.UplinkFrameCounter,
+                        0,
                         frmPayload);
                 }
                 else
@@ -228,12 +231,12 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     var frameControl = new UplinkFrameControl(false, false, false, false, (byte)macCommandsLength);
                     var frameHeader = new FrameHeader(Settings!.DeviceAddress, frameControl, Settings.UplinkFrameCounter, responseMacCommands);
                     response = new DataMessage(
-                        Settings.AppSKey, 
-                        Settings.NetworkSKey, 
-                        new MacHeader(PacketType.UnconfirmedDataUp, 0x00), 
-                        frameHeader, 
-                        Settings.UplinkFrameCounter, 
-                        null, 
+                        Settings.AppSKey,
+                        Settings.NetworkSKey,
+                        new MacHeader(PacketType.UnconfirmedDataUp, 0x00),
+                        frameHeader,
+                        Settings.UplinkFrameCounter,
+                        null,
                         Array.Empty<byte>());
                 }
 
@@ -246,7 +249,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
         protected MacCommand HandleAdrRequest(LinkADRReq request)
         {
             throw new NotImplementedException("Handling ADR requests is not yet supported");
-            return new LinkADRAns(new byte[]{0x00});
+            return new LinkADRAns(new byte[] { 0x00 });
         }
 
         protected MacCommand HandleDevStatusRequest(DevStatusReq request, int snr)

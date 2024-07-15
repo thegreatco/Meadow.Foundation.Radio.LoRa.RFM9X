@@ -30,7 +30,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             var logger = new Logger();
             var mockRadio = new Mock<ILoRaRadio>();
             var mockPacketFactory = new Mock<IPacketFactory>();
-            var parameters = new LoRaWanParameters(LoRaWanChannel.Us915Fsb2, appKey, devEui, joinEui);
+            var parameters = new LoRaWanParameters(new US915ChannelPlan(DataRate.DR4), appKey, devEui, joinEui);
             var network = new TestLoRaWanNetwork(logger, mockRadio.Object, parameters);
             var envelope = new Envelope(Array.Empty<byte>(), 0);
             Assert.ThrowsAsync<PacketFactoryNullException>(async () => await network.HandleMacCommands(envelope));
@@ -51,7 +51,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             var mockRadio = new Mock<ILoRaRadio>();
             var mockPacketFactory = new Mock<IPacketFactory>();
             mockPacketFactory.Setup(x => x.Parse(It.IsAny<byte[]>())).Returns(dm);
-            var parameters = new LoRaWanParameters(LoRaWanChannel.Us915Fsb2, appKey, devEui, joinEui);
+            var parameters = new LoRaWanParameters(new US915ChannelPlan(DataRate.DR4), appKey, devEui, joinEui);
             var network = new TestLoRaWanNetwork(logger, mockRadio.Object, parameters);
             network.SetSettings(settings);
             network.SetPacketFactory(mockPacketFactory.Object);
@@ -76,7 +76,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
             mockRadio.Setup(x => x.Send(It.IsAny<byte[]>())).Callback<byte[]>(x => dataSent = x).Returns(new ValueTask());
             var mockPacketFactory = new Mock<IPacketFactory>();
             mockPacketFactory.Setup(x => x.Parse(It.IsAny<byte[]>())).Returns(dm);
-            var parameters = new LoRaWanParameters(LoRaWanChannel.Us915Fsb2, appKey, devEui, joinEui);
+            var parameters = new LoRaWanParameters(new US915ChannelPlan(DataRate.DR4), appKey, devEui, joinEui);
             var network = new TestLoRaWanNetwork(logger, mockRadio.Object, parameters);
             network.SetSettings(settings);
             network.SetPacketFactory(mockPacketFactory.Object);

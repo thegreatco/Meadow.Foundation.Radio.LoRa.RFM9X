@@ -1,35 +1,28 @@
-﻿using Meadow.Units;
-using System.Linq;
+﻿using System;
+using System.Collections.Generic;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
-    internal class LoRaWanFrequencyManager(LoRaWanChannel wanChannel)
+    internal sealed class LoRaWanFrequencyManager(LoRaWanChannelPlan plan)
     {
-        public readonly Frequency UplinkBandwidth = wanChannel.UplinkBandwidth;
-        public readonly Frequency DownlinkBandwidth = wanChannel.DownlinkBandwidth;
-        public readonly Frequency UplinkBaseFrequency = wanChannel.UplinkBaseFrequency;
-        public readonly Frequency DownlinkBaseFrequency = wanChannel.DownlinkBaseFrequency;
+        public LoRaWanChannelPlan Plan { get; } = plan;
 
-        private readonly Frequency[] _uplinkChannels = Enumerable.Range(0, wanChannel.UplinkChannelCount)
-                                                                 .Select(i => new Frequency(
-                                                                             wanChannel.UplinkBaseFrequency.Hertz
-                                                                           + i * wanChannel.UplinkChannelWidth.Hertz))
-                                                                 .ToArray();
+        private IDictionary<int, LoRaWanChannel1> EnabledUpstreamChannels { get; } = new Dictionary<int, LoRaWanChannel1>(plan.AvailableUpstreamChannels);
+        private IDictionary<int, LoRaWanChannel1> EnabledDownstreamChannels { get; } = new Dictionary<int, LoRaWanChannel1>(plan.AvailableDownstreamChannels);
 
-        private readonly Frequency[] _downlinkChannels = Enumerable.Range(0, wanChannel.DownlinkChannelCount)
-                                                                   .Select(i => new Frequency(
-                                                                               wanChannel.DownlinkBaseFrequency.Hertz
-                                                                             + i * wanChannel.DownlinkChannelWidth.Hertz))
-                                                                   .ToArray();
-
-        private int _currentChannel = 0;
-
-        public Frequency GetNextUplinkFrequency()
+        public LoRaWanChannel1 GetJoinFrequency()
         {
-            if (_currentChannel >= _uplinkChannels.Length)
-                _currentChannel = 0;
+            return Plan.GetJoinChannel();
+        }
 
-            return _uplinkChannels[_currentChannel++];
+        public LoRaWanChannel1 GetNextUplinkFrequency()
+        {
+            throw new NotImplementedException();
+        }
+
+        public LoRaWanChannel1 GetDownlinkFrequency()
+        {
+            return Plan.GetDownstreamChannel();
         }
     }
 }

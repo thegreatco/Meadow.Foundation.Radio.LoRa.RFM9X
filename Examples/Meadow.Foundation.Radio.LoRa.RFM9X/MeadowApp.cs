@@ -28,7 +28,7 @@ namespace Meadow.Foundation.Radio.Sx127X
             var appKey = new AppKey([0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67]);
             var joinEui = new JoinEui([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
             
-            var loRaWanParameters = new LoRaWanParameters(LoRaWanChannel.Us915Fsb2, appKey, devEui, joinEui);
+            var loRaWanParameters = new LoRaWanParameters(new US915ChannelPlan(DataRate.DR4), appKey, devEui, joinEui);
             _theThingsNetwork = new TheThingsNetwork(Resolver.Log, _sx127X, loRaWanParameters);
             await _theThingsNetwork.Initialize().ConfigureAwait(false);
             await base.Initialize().ConfigureAwait(false);

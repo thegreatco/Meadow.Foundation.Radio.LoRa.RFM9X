@@ -104,16 +104,16 @@ namespace Meadow.Foundation.Radio.Sx127X
         {
             var bw = bandwidth.Kilohertz switch
                             {
-                                7.8   => Bandwidth.Bw7_8kHz,
-                                10.4  => Bandwidth.Bw10_4kHz,
-                                15.6  => Bandwidth.Bw15_6kHz,
-                                20.8  => Bandwidth.Bw20_8kHz,
-                                31.25 => Bandwidth.Bw31_25kHz,
-                                41.7  => Bandwidth.Bw41_7kHz,
-                                62.5  => Bandwidth.Bw62_5kHz,
-                                125   => Bandwidth.Bw125kHz,
-                                250   => Bandwidth.Bw250kHz,
-                                500   => Bandwidth.Bw500kHz,
+                                7.8   => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw7_8kHz,
+                                10.4  => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw10_4kHz,
+                                15.6  => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw15_6kHz,
+                                20.8  => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw20_8kHz,
+                                31.25 => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw31_25kHz,
+                                41.7  => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw41_7kHz,
+                                62.5  => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw62_5kHz,
+                                125   => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw125kHz,
+                                250   => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw250kHz,
+                                500   => LoRa.RFM9X.LoRaRegisters.Bandwidth.Bw500kHz,
                                 _     => throw new ArgumentOutOfRangeException(nameof(bandwidth), $"Invalid bandwidth {bandwidth.Kilohertz}")
                             };
             var value = (byte)bw;
