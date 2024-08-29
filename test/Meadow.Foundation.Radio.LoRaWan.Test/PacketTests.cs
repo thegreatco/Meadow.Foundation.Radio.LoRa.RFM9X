@@ -10,7 +10,7 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
         [Test]
         public void TestJoinRequestMessage()
         {
-            var settings = new OtaaSettings(new AppKey([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            var settings = new OtaaSettings(new AppKey([0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67]),
                                             new JoinNonce([0, 0, 0, 0]),
                                             new NetworkId([0, 0, 0, 0]),
                                             new DeviceAddress([0, 0, 0, 0]),
@@ -19,19 +19,21 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
                                             0,
                                             new NetworkSKey([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                                             new AppSKey([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
-            var joinEui = new JoinEui([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
-            var devEui = new DevEui([0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x10, 0x11]);
-            var devNonce = new DeviceNonce([0x12, 0x13]);
+            var joinEui = new JoinEui([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            var devEui = new DevEui([0x06, 0x31, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70]);
+            var devNonce = new DeviceNonce([0x41, 0x41]);
             var packet = new JoinRequest(settings.AppKey, joinEui, devEui, devNonce);
-            Assert.That(packet.JoinEui.Value.ToHexString(), Is.EqualTo("0102030405060708"));
-            Assert.That(packet.DeviceEui.Value.ToHexString(), Is.EqualTo("090A0B0C0D0E1011"));
-            Assert.That(packet.DeviceNonce.Value.ToHexString(), Is.EqualTo("1213"));
-            Assert.That(packet.MacHeader.Value, Is.EqualTo(0x00));
-            Assert.That(packet.MacPayload.ToHexString(), Is.EqualTo("0102030405060708090A0B0C0D0E10111213"));
-            Assert.That(packet.Mic.Value.ToHexString(), Is.EqualTo("1D2D332E"));
-            Assert.That(packet.PhyPayload.ToHexString(), Is.EqualTo("000102030405060708090A0B0C0D0E101112131D2D332E"));
             Console.WriteLine(packet);
+            Assert.That(packet.JoinEui.Value.ToHexString(), Is.EqualTo("0000000000000000"));
+            Assert.That(packet.DeviceEui.Value.ToHexString(), Is.EqualTo("063100D87ED5B370"));
+            Assert.That(packet.DeviceNonce.Value.ToHexString(), Is.EqualTo("4141"));
+            Assert.That(packet.MacHeader.Value, Is.EqualTo(0x00));
+            Assert.That(packet.MacPayload.ToHexString(), Is.EqualTo("0000000000000000063100D87ED5B3704141"));
+            Assert.That(packet.Mic.Value.ToHexString(), Is.EqualTo("7978D605"));
+            Assert.That(packet.PhyPayload.ToHexString(), Is.EqualTo("000000000000000000063100D87ED5B37041417978D605"));
         }
+        //IFiMqt10HW1GYNewW/N3zlEtgeijNH3ilFV/OD7G2ISq
+        //IHnhhPlfcrfzpOjcWoFrYgHtGMPkqUrBmVj93KxPq05k
 
         [Test]
         public void TestJoinResponseMessage()
@@ -45,6 +47,14 @@ namespace Meadow.Foundation.Radio.LoRaWan.Test
             Assert.That(packet.Mic.Value.ToHexString(), Is.EqualTo("60BF9C2F"));
             Assert.That(packet.ReceiveDelay, Is.EqualTo(5));
             Console.WriteLine(packet);
+        }
+
+        [Test]
+        public void TestJoinResponseCFList()
+        {
+            var packet = JoinAccept.FromPhy(new AppKey(Convert.FromHexString("F1DE67E2DCF1BA6ED05B81682B7E7A51")), Convert.FromBase64String("IHMSXDqPI9YDLdQPLkRt/tgy10pq8IAsgM5gfpbFjOYi"));
+            Console.WriteLine(packet);
+            Console.WriteLine(packet.CFList.Value.ToHexString());
         }
 
         [Test]

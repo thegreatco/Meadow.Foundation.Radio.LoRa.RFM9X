@@ -1,4 +1,7 @@
 ﻿using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("Meadow.Foundation.Radio.LoRaWan.Test")]
 
 namespace System.Runtime.CompilerServices
 {

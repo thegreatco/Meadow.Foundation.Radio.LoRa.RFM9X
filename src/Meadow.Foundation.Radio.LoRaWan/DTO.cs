@@ -11,10 +11,24 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public readonly int Length => Value.Length;
         public static DeviceNonce GenerateNewNonce()
         {
-            var random = new Random();
-            var nonce = new byte[2];
-            random.NextBytes(nonce);
-            return new DeviceNonce(nonce);
+            var filePath = "/meadow0/Data/nonce.bin";
+            if (File.Exists(filePath))
+            {
+                var bytes = File.ReadAllBytes(filePath);
+                var s = BitConverter.ToInt16(bytes);
+                s++;
+                bytes = BitConverter.GetBytes(s);
+                File.WriteAllBytes(filePath, bytes);
+                return new DeviceNonce(bytes);
+            }
+            else
+            {
+                var rand = new Random();
+                short s = (short)rand.Next(0, 255);
+                var bytes = BitConverter.GetBytes(s);
+                File.WriteAllBytes(filePath, bytes);
+                return new DeviceNonce(bytes);
+            }
         }
     }
 
@@ -182,23 +196,27 @@ namespace Meadow.Foundation.Radio.LoRaWan
             return bytes;
         }
 
-        public static async ValueTask<OtaaSettings?> LoadSettings()
+        public static async ValueTask<OtaaSettings?> LoadSettings(string? fileName = null)
         {
-            if (!File.Exists(FileName))
+            fileName ??= FileName;
+
+            if (!File.Exists(fileName))
             {
                 Console.WriteLine("Settings file not found.");
                 return null;
             }
 
-            await using var s = File.Open(FileName, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await using var s = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
             var bytes = new byte[64];
             _ = await s.ReadAsync(bytes).ConfigureAwait(false);
             return new OtaaSettings(bytes);
         }
 
-        public async ValueTask SaveSettings()
+        public async ValueTask SaveSettings(string? fileName = null)
         {
-            await using var s = File.Open(FileName, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+            fileName ??= FileName;
+
+            await using var s = File.Open(fileName, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
             await s.WriteAsync(ToBytes());
             await s.FlushAsync();
         }

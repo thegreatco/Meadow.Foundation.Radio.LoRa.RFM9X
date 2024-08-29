@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace Meadow.Foundation.Radio.LoRaWan
 {
@@ -24,31 +25,53 @@ namespace Meadow.Foundation.Radio.LoRaWan
     public class LinkADRReq(byte[] data) : MacCommand(0x03, Length)
     {
         public static new readonly int Length = 5;
-        public int DataRate { get; } = data[0] & 0x0F;
-        public int TxPower { get; } = (data[0] & 0xF0) >> 4;
-        public bool Channel1 { get; } = (data[1] & 0x01) == 0x01;
-        public bool Channel2 { get; } = (data[1] & 0x02) == 0x02;
-        public bool Channel3 { get; } = (data[1] & 0x04) == 0x04;
-        public bool Channel4 { get; } = (data[1] & 0x08) == 0x08;
-        public bool Channel5 { get; } = (data[1] & 0x10) == 0x10;
-        public bool Channel6 { get; } = (data[1] & 0x20) == 0x20;
-        public bool Channel7 { get; } = (data[1] & 0x40) == 0x40;
-        public bool Channel8 { get; } = (data[1] & 0x80) == 0x80;
-        public bool Channel9 { get; } = (data[2] & 0x01) == 0x01;
-        public bool Channel10 { get; } = (data[2] & 0x02) == 0x02;
-        public bool Channel11 { get; } = (data[2] & 0x04) == 0x04;
-        public bool Channel12 { get; } = (data[2] & 0x08) == 0x08;
-        public bool Channel13 { get; } = (data[2] & 0x10) == 0x10;
-        public bool Channel14 { get; } = (data[2] & 0x20) == 0x20;
-        public bool Channel15 { get; } = (data[2] & 0x40) == 0x40;
-        public bool Channel16 { get; } = (data[2] & 0x80) == 0x80;
-        public byte Redundancy { get; } = data[3];
+        public int DataRate { get; } = data[1] & 0x0F;
+        public int TxPower { get; } = (data[1] & 0xF0) >> 4;
+        public byte[] ChMask { get; } = data[2..4];
+        public Dictionary<int, bool> Channels = new Dictionary<int, bool>()
+        {
+            { 0, (data[2] & 0x01) == 0x01},
+            { 1, (data[2] & 0x02) == 0x02 },
+            { 2, (data[2] & 0x04) == 0x04 },
+            { 3, (data[2] & 0x08) == 0x08 },
+            { 4, (data[2] & 0x10) == 0x10 },
+            { 5, (data[2] & 0x20) == 0x20 },
+            { 6, (data[2] & 0x40) == 0x40 },
+            { 7, (data[2] & 0x80) == 0x80 },
+            { 8, (data[3] & 0x01) == 0x01 },
+            { 9, (data[3] & 0x02) == 0x02 },
+            { 10, (data[3] & 0x04) == 0x04 },
+            { 11, (data[3] & 0x08) == 0x08 },
+            { 12, (data[3] & 0x10) == 0x10 },
+            { 13, (data[3] & 0x20) == 0x20 },
+            { 14, (data[3] & 0x40) == 0x40 },
+            { 15, (data[3] & 0x80) == 0x80 }
+        };
+        public int ChannelMaskControl { get; } = (data[4] & 0x70) >> 4;
+        public int NbTrans { get; } = data[4] & 0x07;
         public override byte[] Value { get; } = data;
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"DataRate: {DataRate}");
+            sb.AppendLine($"TxPower: {TxPower}");
+            sb.AppendLine($"ChMask: {ChMask.ToHexString()}");
+            foreach (var channel in Channels)
+            {
+                sb.AppendLine($"Channel {channel.Key}: {channel.Value}");
+            }
+            sb.AppendLine($"ChannelMaskControl: {ChannelMaskControl}");
+            sb.AppendLine($"NbTrans: {NbTrans}");
+            return sb.ToString();
+        }
     }
-    public class LinkADRAns(byte[] data) : MacCommand(0x03, Length)
+    public class LinkADRAns(byte data) : MacCommand(0x03, Length)
     {
         public static new readonly int Length = 2;
-        public override byte[] Value { get; } = data;
+        public override byte[] Value { get; } = [0x03, data];
+        public bool ChannelMaskAck { get; } = (data & 0x01) == 0x01;
+        public bool DataRateAck { get; } = (data & 0x02) == 0x02;
+        public bool PowerAck { get; } = (data & 0x04) == 0x04;
     }
     public class DutyCycleReq(byte[] data) : MacCommand(0x04, Length)
     {
@@ -170,7 +193,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
                     case 0x03:
                         if (isUplink)
                         {
-                            commands.Add(new LinkADRAns(data[..LinkADRAns.Length]));
+                            commands.Add(new LinkADRAns(data[..LinkADRAns.Length][1]));
                             d = d[LinkADRAns.Length..];
                         }
                         else

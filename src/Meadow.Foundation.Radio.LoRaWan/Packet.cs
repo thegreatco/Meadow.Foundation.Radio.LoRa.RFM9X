@@ -240,16 +240,22 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public JoinEui JoinEui { get; private set; } = JoinEui;
         public DevEui DeviceEui { get; private set; } = DeviceEui;
         public DeviceNonce DeviceNonce { get; private set; } = DeviceNonce;
+
+        // TODO: need to improve memory usage
         public Mic Mic
         {
             get
             {
                 if (AppKey == null)
                     throw new ArgumentNullException(nameof(AppKey));
-                return new Mic(EncryptionTools.ComputeAesCMac(AppKey.Value, [0x00])[..4]);
+                var micInput = new byte[19];
+                micInput[0] = MacHeader.Value;
+                MacPayload.CopyTo(micInput.AsSpan(1));
+                return new Mic(EncryptionTools.ComputeAesCMac(AppKey.Value, micInput)[..4]);
             }
         }
 
+        // TODO: need to improve memory usage
         public byte[] PhyPayload
         {
             get
@@ -259,11 +265,12 @@ namespace Meadow.Foundation.Radio.LoRaWan
                 var bytes = new byte[PayloadSize];
                 bytes[0] = MacHeader.Value;
                 mac.CopyTo(bytes.AsSpan(1));
-                Mic.Value.CopyTo(bytes.AsSpan(1 + mac.Length));
+                mic.Value.CopyTo(bytes.AsSpan(1 + mac.Length));
                 return bytes;
             }
         }
 
+        // TODO: need to improve memory usage
         public byte[] MacPayload
         {
             get
@@ -668,6 +675,26 @@ namespace Meadow.Foundation.Radio.LoRaWan
         public byte[] Value { get; } = Value;
         public CFListType CFListType { get; } = CFListType.Type1;
         public int Length { get; } = Value.Length;
+        public byte[] ChMaskGrp0 => Value[..2];
+        public byte[] ChMaskGrp1 => Value[2..4];
+        public byte[] ChMaskGrp2 => Value[4..6];
+        public byte[] ChMaskGrp3 => Value[6..8];
+        public byte[] ChMaskGrp4 => Value[8..10];
+        public byte[] ChMaskGrp5 => Value[10..12];
+        public byte[] RFU => Value[12..15];
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"CFList Type: {CFListType}");
+            sb.AppendLine($" ChMaskGrp0: {ChMaskGrp0.ToBitString()}");
+            sb.AppendLine($" ChMaskGrp1: {ChMaskGrp1.ToBitString()}");
+            sb.AppendLine($" ChMaskGrp2: {ChMaskGrp2.ToBitString()}");
+            sb.AppendLine($" ChMaskGrp3: {ChMaskGrp3.ToBitString()}");
+            sb.AppendLine($" ChMaskGrp4: {ChMaskGrp4.ToBitString()}");
+            sb.AppendLine($" ChMaskGrp5: {ChMaskGrp5.ToBitString()}");
+            sb.AppendLine($"        RFU: {RFU.ToHexString()}");
+            return sb.ToString();
+        }
     }
 
     public interface IPacketFactory

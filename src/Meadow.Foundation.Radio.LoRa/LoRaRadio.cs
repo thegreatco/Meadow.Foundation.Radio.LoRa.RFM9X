@@ -5,6 +5,9 @@ namespace Meadow.Foundation.Radio.LoRa
 {
     public abstract class LoRaRadio : ILoRaRadio
     {
+        public abstract float MinimumTxPower { get; }
+        public abstract float MaximumTxPower { get; }
+
         /// <summary>
         /// Initialize the hardware
         /// </summary>

@@ -1,26 +1,75 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace Meadow.Foundation.Radio.LoRaWan
+﻿namespace Meadow.Foundation.Radio.LoRaWan
 {
-    internal sealed class LoRaWanFrequencyManager(LoRaWanChannelPlan plan)
+    internal sealed class LoRaWanFrequencyManager
     {
-        public LoRaWanChannelPlan Plan { get; } = plan;
+        private int _currentUpstreamChannel = 0;
 
-        private IDictionary<int, LoRaWanChannel1> EnabledUpstreamChannels { get; } = new Dictionary<int, LoRaWanChannel1>(plan.AvailableUpstreamChannels);
-        private IDictionary<int, LoRaWanChannel1> EnabledDownstreamChannels { get; } = new Dictionary<int, LoRaWanChannel1>(plan.AvailableDownstreamChannels);
+        public LoRaWanFrequencyManager(LoRaWanChannelPlan plan)
+        {
+            Plan = plan;
+            EnabledUpstreamChannels = new LoRaWanChannel[plan.AvailableUpstreamChannels.Count];
+            foreach (var channel in plan.AvailableUpstreamChannels)
+            {
+                EnabledUpstreamChannels[channel.Key] = channel.Value;
+            }
+            EnabledDownstreamChannels = new LoRaWanChannel[plan.AvailableDownstreamChannels.Count];
+            foreach (var channel in plan.AvailableDownstreamChannels)
+            {
+                EnabledDownstreamChannels[channel.Key] = channel.Value;
+            }
+        }
 
-        public LoRaWanChannel1 GetJoinFrequency()
+        public LoRaWanChannelPlan Plan { get; }
+
+        public LoRaWanChannel?[] EnabledUpstreamChannels { get; }
+        public LoRaWanChannel?[] EnabledDownstreamChannels { get; }
+
+        public void SetChannelState(int channel, bool enabled)
+        {
+            if (EnabledUpstreamChannels[channel] != null && !enabled)
+            {
+                EnabledUpstreamChannels[channel] = null;
+            }
+
+            if (EnabledUpstreamChannels[channel] == null && enabled)
+            {
+                EnabledUpstreamChannels[channel] = Plan.AvailableUpstreamChannels[channel];
+            }
+        }
+
+        public bool GetChannelState(int channel)
+        {
+            return EnabledUpstreamChannels[channel] != null;
+        }
+
+        public LoRaWanChannel GetJoinFrequency()
         {
             return Plan.GetJoinChannel();
         }
 
-        public LoRaWanChannel1 GetNextUplinkFrequency()
+        public LoRaWanChannel GetNextUplinkFrequency()
         {
-            throw new NotImplementedException();
+            LoRaWanChannel? channel;
+            try
+            {
+                int startChannel = _currentUpstreamChannel;
+                do
+                {
+                    channel = EnabledUpstreamChannels[_currentUpstreamChannel];
+                    if (channel != null)
+                        return channel;
+                    _currentUpstreamChannel = (_currentUpstreamChannel + 1) % EnabledUpstreamChannels.Length;
+                } while (_currentUpstreamChannel != startChannel);
+            }
+            finally
+            {
+                _currentUpstreamChannel = (_currentUpstreamChannel + 1) % EnabledUpstreamChannels.Length;
+            }
+
+            throw new NoAvailableChannelsException();
         }
 
-        public LoRaWanChannel1 GetDownlinkFrequency()
+        public LoRaWanChannel GetDownlinkFrequency()
         {
             return Plan.GetDownstreamChannel();
         }

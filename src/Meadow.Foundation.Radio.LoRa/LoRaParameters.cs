@@ -7,6 +7,7 @@ namespace Meadow.Foundation.Radio.LoRa
     public record struct LoRaParameters(
         Frequency Frequency,
         Frequency Bandwidth,
+        int TxPower,
         CodingRate CodingRate,
         SpreadingFactor SpreadingFactor,
         bool ImplicitHeaderMode,
@@ -19,6 +20,7 @@ namespace Meadow.Foundation.Radio.LoRa
             var sb = new StringBuilder();
             sb.AppendLine($"Frequency          {Frequency}");
             sb.AppendLine($"Bandwidth          {Bandwidth}");
+            sb.AppendLine($"Power              {TxPower} dBm");
             sb.AppendLine($"CodingRate         {CodingRate}");
             sb.AppendLine($"SpreadingFactor    {SpreadingFactor}");
             sb.AppendLine($"ImplicitHeaderMode {ImplicitHeaderMode}");

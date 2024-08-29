@@ -24,11 +24,11 @@ namespace Meadow.Foundation.Radio.Sx127X
             _sx127X = new Sx127X(Resolver.Log, config);
 
             // Needs to be in LSB format
-            var devEui = new DevEui([0x06, 0x31, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70]);
-            var appKey = new AppKey([0xA2, 0x66, 0xE8, 0x9F, 0x4E, 0x3A, 0xA7, 0x33, 0x18, 0x19, 0x94, 0x89, 0x38, 0xE5, 0x68, 0x67]);
+            var devEui = new DevEui([0x4B, 0x34, 0x00, 0xD8, 0x7E, 0xD5, 0xB3, 0x70]);
+            var appKey = new AppKey([0xF1, 0xDE, 0x67, 0xE2, 0xDC, 0xF1, 0xBA, 0x6E, 0xD0, 0x5B, 0x81, 0x68, 0x2B, 0x7E, 0x7A, 0x51]);
             var joinEui = new JoinEui([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
             
-            var loRaWanParameters = new LoRaWanParameters(new US915ChannelPlan(DataRate.DR4), appKey, devEui, joinEui);
+            var loRaWanParameters = new LoRaWanParameters(new US915ChannelPlan(), appKey, devEui, joinEui);
             _theThingsNetwork = new TheThingsNetwork(Resolver.Log, _sx127X, loRaWanParameters);
             await _theThingsNetwork.Initialize().ConfigureAwait(false);
             await base.Initialize().ConfigureAwait(false);
@@ -36,7 +36,7 @@ namespace Meadow.Foundation.Radio.Sx127X
 
         public override async Task Run()
         {
-            while (true)
+            for(var i = 0; i < 10; i++)
             {
                 var str = $"Hello";
                 Resolver.Log.Info(str);

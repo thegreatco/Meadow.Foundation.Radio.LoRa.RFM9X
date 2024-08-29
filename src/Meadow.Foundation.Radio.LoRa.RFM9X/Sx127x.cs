@@ -49,12 +49,16 @@ namespace Meadow.Foundation.Radio.Sx127X
         #region LoRa Settings
         private Frequency _frequency;
         private Frequency _bandwidth;
+        private int _txPower;
         private ErrorCodingRate _errorCodingRate;
         private LoRaRegisters.SpreadingFactor _spreadingFactor;
         private ImplicitHeaderMode _implicitHeaderMode;
         private PayloadCrcMode _payloadCrcMode;
         private byte _syncWord;
         private bool _invertIq;
+
+        public override float MinimumTxPower { get; } = 5;
+        public override float MaximumTxPower { get; } = 20;
         #endregion
 
         public Sx127X(Logger logger, Sx172XConfiguration config)
@@ -162,6 +166,7 @@ namespace Meadow.Foundation.Radio.Sx127X
             _payloadCrcMode = parameters.CrcMode ? PayloadCrcMode.On : PayloadCrcMode.Off;
             _syncWord = parameters.SyncWord;
             _invertIq = parameters.InvertIq;
+            _txPower = parameters.TxPower;
             return new ValueTask();
         }
 
@@ -189,6 +194,7 @@ namespace Meadow.Foundation.Radio.Sx127X
             {
                 // Set the transmit frequency
                 SetFrequency(_frequency);
+                SetTxPower(_txPower);
                 WriteModemConfig1(_bandwidth, _errorCodingRate, _implicitHeaderMode);
                 // The CRC mode should be on, but I'm having trouble with my gateway
                 WriteModemConfig2(_spreadingFactor, _payloadCrcMode);

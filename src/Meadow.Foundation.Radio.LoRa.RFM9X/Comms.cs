@@ -157,6 +157,16 @@ namespace Meadow.Foundation.Radio.Sx127X
             WriteRegister(Register.FrfLsb, bytes[0]);
         }
 
+        private void SetTxPower(int txPower)
+        {
+            if (txPower > 17)
+                throw new ArgumentOutOfRangeException(nameof(txPower), "TX Power must be between 2 and 17 dBm");
+            _logger.Trace($"Setting TX Power to {txPower}");
+            var regPower = txPower - 2;
+            byte paConfig = (byte)(((0x07<<4)|regPower) | 0x80);
+            WriteRegister(Register.PaConfig, paConfig);
+        }
+
         private Frequency GetFrequency()
         {
             var msb = ReadRegister(Register.FrfMsb);

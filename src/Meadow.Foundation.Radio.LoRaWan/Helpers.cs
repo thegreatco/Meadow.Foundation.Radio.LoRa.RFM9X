@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 
 namespace Meadow.Foundation.Radio.LoRaWan
@@ -244,6 +245,26 @@ namespace Meadow.Foundation.Radio.LoRaWan
             }
 
             return new string(chars);
+        }
+
+        public static string ToBitString(this byte[] arr)
+        {
+            var bitstring = new StringBuilder(arr.Length * 8);
+            foreach(var b in arr)
+            {
+                bitstring.Append(Convert.ToString(b,2).PadLeft(8, '0'));
+            }
+            return bitstring.ToString();
+        }
+
+        public static string ToBitString(this Span<byte> span)
+        {
+            var bitstring = new StringBuilder(span.Length * 8);
+            foreach(var b in span)
+            {
+                bitstring.Append(Convert.ToString(b,2).PadLeft(8, '0'));
+            }
+            return bitstring.ToString();
         }
 
         public static void CopyToReverse<T>(this Span<T> src, T[] dest)

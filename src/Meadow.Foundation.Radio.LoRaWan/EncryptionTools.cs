@@ -84,6 +84,7 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
                 // Pad the message if necessary
                 var paddedMessage = PadMessage(message);
+                //var paddedMessage = message;
 
                 // Determine which subkey to use
                 var lastBlock = new byte[BlockSize];
@@ -104,18 +105,18 @@ namespace Meadow.Foundation.Radio.LoRaWan
 
                 // Initialize the AES encryption
                 using var aes = new AesManaged { Key = key, Mode = CipherMode.ECB, Padding = PaddingMode.None };
-                var cmac = new byte[BlockSize];
+                var cMac = new byte[BlockSize];
                 using var encryptor = aes.CreateEncryptor();
                 var block = new byte[BlockSize];
                 for (var i = 0; i < numberOfBlocks - 1; i++)
                 {
                     Array.Copy(paddedMessage, i * BlockSize, block, 0, BlockSize);
-                    cmac = encryptor.TransformFinalBlock(Xor(block, cmac), 0, BlockSize);
+                    cMac = encryptor.TransformFinalBlock(Xor(block, cMac), 0, BlockSize);
                 }
 
-                cmac = encryptor.TransformFinalBlock(Xor(lastBlock, cmac), 0, BlockSize);
+                cMac = encryptor.TransformFinalBlock(Xor(lastBlock, cMac), 0, BlockSize);
 
-                return cmac;
+                return cMac;
             }
 
             private static Tuple<byte[], byte[]> GenerateSubKeys(byte[] key)
